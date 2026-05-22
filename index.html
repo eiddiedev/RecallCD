@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="记忆CD">
+  <title>记忆CD</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      min-width: 320px;
+      margin: 0;
+      overflow: hidden;
+      background: #020202;
+      color: #f4efe8;
+      font-family: Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      touch-action: none;
+    }
+    body { position: fixed; inset: 0; }
+    #scene {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      display: block;
+      width: 100vw;
+      height: 100svh;
+      background: transparent;
+      outline: none;
+      touch-action: none;
+    }
+    #hud, #detail {
+      position: fixed;
+      inset: 0;
+      z-index: 3;
+      pointer-events: none;
+    }
+    #hud::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto;
+      height: 190px;
+      background: linear-gradient(180deg, rgba(2,2,2,.95), rgba(2,2,2,.58), transparent);
+    }
+    .brand {
+      position: absolute;
+      top: 24px;
+      left: 22px;
+      z-index: 1;
+      width: min(260px, calc(100vw - 138px));
+    }
+    .brand small {
+      display: block;
+      color: rgba(244,239,232,.58);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .06em;
+    }
+    .brand h1 {
+      margin: 6px 0 8px;
+      color: #f3ece1;
+      font-family: Impact, "Arial Black", Arial, sans-serif;
+      font-size: clamp(36px, 10.5vw, 54px);
+      line-height: .9;
+      letter-spacing: 0;
+    }
+    .brand p { display: none; }
+    .import-btn, .back-btn {
+      pointer-events: auto;
+      border: 0;
+      border-radius: 999px;
+      background: rgba(244,239,232,.94);
+      color: #15110e;
+      font: 800 13px Arial, "PingFang SC", sans-serif;
+      min-height: 38px;
+      padding: 0 18px;
+    }
+    .import-btn {
+      position: absolute;
+      top: 24px;
+      right: 22px;
+      z-index: 2;
+    }
+    .caption {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 32px;
+      text-align: center;
+      text-shadow: 0 2px 18px rgba(0,0,0,.8);
+    }
+    .caption strong {
+      display: block;
+      font-size: 24px;
+      color: #f6efe4;
+    }
+    .caption span {
+      display: block;
+      margin-top: 7px;
+      color: rgba(246,239,228,.58);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .caption {
+      transition: opacity .36s ease, transform .36s ease;
+    }
+    body.presenting .caption {
+      opacity: 0;
+      transform: translateY(18px);
+    }
+    .album-title-layer {
+      position: fixed;
+      left: 0;
+      right: 0;
+      top: 18svh;
+      z-index: 0;
+      pointer-events: none;
+      display: grid;
+      place-items: center;
+      opacity: 0;
+      transform: translateY(22px) scale(.98);
+      transition: opacity .46s ease, transform .46s ease;
+      mix-blend-mode: screen;
+    }
+    body.presenting .album-title-layer {
+      opacity: .28;
+      transform: translateY(0) scale(1);
+    }
+    .album-title-layer strong {
+      max-width: 92vw;
+      color: #fff7e8;
+      font-family: Impact, "Arial Black", Arial, sans-serif;
+      font-size: clamp(58px, 21vw, 128px);
+      line-height: .82;
+      letter-spacing: 0;
+      text-align: center;
+      text-transform: uppercase;
+      white-space: nowrap;
+      text-shadow: 0 0 40px rgba(255,255,255,.28), 0 18px 58px rgba(0,0,0,.68);
+    }
+    .photo-drawer {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 4;
+      height: min(67svh, 620px);
+      padding: 28px 18px calc(20px + env(safe-area-inset-bottom));
+      background: linear-gradient(180deg, rgba(247,239,225,.96), rgba(218,208,190,.98));
+      color: #17120e;
+      border-radius: 26px 26px 0 0;
+      box-shadow: 0 -24px 80px rgba(0,0,0,.52);
+      transform: translateY(105%);
+      transition: transform .58s cubic-bezier(.2,.86,.2,1);
+      pointer-events: auto;
+      overflow: hidden;
+    }
+    .photo-drawer.open { transform: translateY(0); }
+    .drawer-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+    .drawer-head strong {
+      font-family: Impact, "Arial Black", Arial, sans-serif;
+      font-size: clamp(32px, 10vw, 52px);
+      line-height: .9;
+      letter-spacing: 0;
+    }
+    .drawer-head span {
+      flex: 0 0 auto;
+      color: rgba(23,18,14,.56);
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .drawer-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-auto-rows: minmax(126px, 24svh);
+      gap: 10px;
+      height: calc(100% - 64px);
+      overflow: auto;
+      padding-bottom: 8px;
+      -webkit-overflow-scrolling: touch;
+    }
+    .photo-thumb {
+      position: relative;
+      min-width: 0;
+      border: 0;
+      padding: 0;
+      border-radius: 6px;
+      overflow: hidden;
+      background: #1a1714 center / cover no-repeat;
+      box-shadow: inset 0 0 0 1px rgba(23,18,14,.18);
+    }
+    .photo-thumb::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, transparent 48%, rgba(0,0,0,.58));
+    }
+    .photo-thumb span {
+      position: absolute;
+      left: 9px;
+      right: 9px;
+      bottom: 8px;
+      z-index: 1;
+      color: #fff7ea;
+      font-size: 10px;
+      font-weight: 900;
+      line-height: 1.25;
+      text-align: left;
+      text-shadow: 0 1px 8px rgba(0,0,0,.65);
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+    .photo-thumb.active {
+      box-shadow: inset 0 0 0 3px #17120e, 0 12px 30px rgba(23,18,14,.22);
+    }
+    @media (orientation: landscape) {
+      .album-title-layer, .photo-drawer { display: none; }
+    }
+    #detail {
+      display: none;
+      z-index: 5;
+      background: #050505;
+      pointer-events: auto;
+    }
+    #detail.open { display: block; }
+    #detailCanvas {
+      display: block;
+      width: 100vw;
+      height: 100svh;
+    }
+    .back-btn {
+      position: absolute;
+      top: 18px;
+      left: 18px;
+      z-index: 2;
+      background: rgba(0,0,0,.62);
+      color: #fff7ea;
+      border: 1px solid rgba(255,255,255,.18);
+    }
+    .hidden-file {
+      position: fixed;
+      left: -9999px;
+      top: -9999px;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .error {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: none;
+      place-items: center;
+      padding: 28px;
+      background: #080706;
+      color: #f4efe8;
+      text-align: center;
+      font-weight: 800;
+    }
+    .error.show { display: grid; }
+  </style>
+</head>
+<body>
+  <canvas id="scene" aria-label="3D 照片 CD 档案架"></canvas>
+  <div id="hud">
+    <button id="importBtn" class="import-btn" type="button">导入照片</button>
+    <div class="brand">
+      <small>MEMORY DISC</small>
+      <h1>记忆CD</h1>
+      <p></p>
+    </div>
+    <div class="caption">
+      <strong id="captionTitle">日光暖调</strong>
+      <span id="captionMeta">3 张 · 暖色 / 旅行 / 胶片</span>
+    </div>
+  </div>
+  <div id="albumTitleLayer" class="album-title-layer" aria-hidden="true"><strong>日光暖调</strong></div>
+  <section id="photoDrawer" class="photo-drawer" aria-label="照片集抽屉">
+    <div class="drawer-head">
+      <strong id="drawerTitle">日光暖调</strong>
+      <span id="drawerMeta">3 张</span>
+    </div>
+    <div id="drawerGrid" class="drawer-grid"></div>
+  </section>
+  <section id="detail" aria-label="照片详情">
+    <button id="backBtn" class="back-btn" type="button">返回</button>
+    <canvas id="detailCanvas"></canvas>
+  </section>
+  <input id="filePicker" class="hidden-file" type="file" accept="image/*" multiple>
+  <div id="error" class="error">哎呀，出错了，请重启试试吧~</div>
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
