@@ -119,45 +119,11 @@
       transform: scale(.94);
       border-color: rgba(244,239,232,.42);
     }
-    .fm-radio {
-      position: relative;
-      width: 28px;
-      height: 22px;
-      border: 2px solid currentColor;
-      border-radius: 7px;
-      opacity: .94;
-    }
-    .fm-radio::before {
-      content: "";
-      position: absolute;
-      left: 4px;
-      top: -10px;
-      width: 18px;
-      height: 12px;
-      border-top: 2px solid currentColor;
-      border-left: 2px solid currentColor;
-      transform: rotate(20deg);
-      transform-origin: left bottom;
-    }
-    .fm-radio::after {
-      content: "";
-      position: absolute;
-      right: 4px;
-      top: 6px;
-      width: 6px;
-      height: 6px;
-      border: 2px solid currentColor;
-      border-radius: 50%;
-    }
-    .fm-line {
-      position: absolute;
-      left: 5px;
-      top: 7px;
-      width: 10px;
-      height: 2px;
-      border-radius: 2px;
-      background: currentColor;
-      box-shadow: 0 5px 0 currentColor;
+    .fm-logo {
+      width: 46px;
+      height: 46px;
+      object-fit: contain;
+      filter: drop-shadow(0 5px 12px rgba(0,0,0,.38));
     }
     .fm-label {
       position: absolute;
@@ -385,7 +351,7 @@
       <p></p>
     </div>
     <button id="fmBtn" class="fm-btn" type="button" aria-label="打开 B-SIDE FM" title="B-SIDE FM">
-      <span class="fm-radio" aria-hidden="true"><span class="fm-line"></span></span>
+      <img class="fm-logo" src="./images/bside-fm-logo.png" alt="" aria-hidden="true">
       <span class="fm-label">FM</span>
     </button>
     <div class="caption">
