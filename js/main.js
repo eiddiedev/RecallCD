@@ -629,11 +629,14 @@ function resize() {
 }
 
 function setupEvents() {
+  console.log("setupEvents: attaching listeners");
   addEventListener("resize", resize, { passive: true });
   sceneCanvas.addEventListener("pointerdown", onPointerDown, { passive: true });
   sceneCanvas.addEventListener("pointermove", onPointerMove, { passive: true });
   sceneCanvas.addEventListener("pointerup", onPointerUp, { passive: true });
   sceneCanvas.addEventListener("pointercancel", () => { app.drag = null; }, { passive: true });
+  sceneCanvas.addEventListener("click", onCanvasClick, { passive: true });
+  sceneCanvas.addEventListener("touchend", onTouchEnd, { passive: true });
   sceneCanvas.addEventListener("wheel", onWheel, { passive: false });
   importBtn.addEventListener("click", () => filePicker.click());
   deleteCdBtn.addEventListener("click", deleteCurrentCollection);
@@ -706,6 +709,7 @@ function saveLocationAssignment() {
 }
 
 function onPointerDown(event) {
+  console.log("pointerdown", event.clientX, event.clientY, app.presentationPhase);
   if (app.presentationPhase !== "idle") return;
   app.drag = {
     x: event.clientX,
@@ -714,7 +718,6 @@ function onPointerDown(event) {
     startSpin: app.spinTarget,
     moved: false
   };
-  sceneCanvas.setPointerCapture?.(event.pointerId);
 }
 
 function onPointerMove(event) {
@@ -733,6 +736,7 @@ function onPointerMove(event) {
 }
 
 function onPointerUp(event) {
+  console.log("pointerup", event.clientX, event.clientY);
   const drag = app.drag;
   app.drag = null;
   if (!drag) return;
@@ -744,11 +748,32 @@ function onPointerUp(event) {
     updateCaption();
     return;
   }
-  const hit = pickGroup(event.clientX, event.clientY);
-  if (!hit) {
+  handleCanvasTap(event.clientX, event.clientY);
+}
+
+function onCanvasClick(event) {
+  if (app.drag) return;
+  handleCanvasTap(event.clientX, event.clientY);
+}
+
+function onTouchEnd(event) {
+  if (app.drag) return;
+  const touch = event.changedTouches[0];
+  if (touch) handleCanvasTap(touch.clientX, touch.clientY);
+}
+
+let lastTapTime = 0;
+function handleCanvasTap(x, y) {
+  console.log("handleCanvasTap", x, y, app.presentationPhase);
+  const now = performance.now();
+  if (now - lastTapTime < 300) return;
+  lastTapTime = now;
+  if (app.presentationPhase !== "idle") {
     hidePresentation();
     return;
   }
+  const hit = pickGroup(x, y);
+  if (!hit) return;
   const collection = collections[hit.userData.index];
   app.selectedIndex = hit.userData.index;
   app.targetPosition = app.selectedIndex;
