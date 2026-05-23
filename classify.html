@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>B-SIDE – 音乐分类</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%;
+      background: #0a0908;
+      color: #f4efe8;
+      font-family: Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+    .page {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 48px 20px 80px;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+    .header h1 {
+      font-family: Impact, "Arial Black", Arial, sans-serif;
+      font-size: clamp(32px, 10vw, 48px);
+      color: #f3ece1;
+      letter-spacing: 0;
+      line-height: 1;
+    }
+    .header p {
+      margin-top: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      color: rgba(244,239,232,.4);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .upload-zone {
+      width: min(420px, 90vw);
+      border: 2px dashed rgba(212,168,83,.25);
+      border-radius: 20px;
+      padding: 48px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.3s, background 0.3s;
+      background: rgba(255,255,255,.02);
+      position: relative;
+    }
+    .upload-zone:hover, .upload-zone.dragover {
+      border-color: rgba(212,168,83,.6);
+      background: rgba(212,168,83,.04);
+    }
+    .upload-zone input { display: none; }
+    .upload-icon {
+      width: 56px; height: 56px;
+      border-radius: 50%;
+      background: rgba(212,168,83,.12);
+      display: grid; place-items: center;
+      margin: 0 auto 16px;
+      font-size: 24px;
+      color: #d4a853;
+    }
+    .upload-text { font-size: 15px; font-weight: 700; color: rgba(244,239,232,.7); }
+    .upload-hint {
+      margin-top: 8px;
+      font-size: 11px;
+      color: rgba(244,239,232,.3);
+      font-weight: 600;
+    }
+    .result {
+      width: min(420px, 90vw);
+      margin-top: 32px;
+      display: none;
+    }
+    .result.show { display: block; }
+    .result-card {
+      background: rgba(255,255,255,.04);
+      border: 1px solid rgba(244,239,232,.08);
+      border-radius: 20px;
+      padding: 28px 24px;
+      text-align: center;
+    }
+    .result-genre {
+      font-family: Impact, "Arial Black", Arial, sans-serif;
+      font-size: clamp(36px, 12vw, 56px);
+      color: #d4a853;
+      line-height: 1;
+      letter-spacing: 0;
+    }
+    .result-confidence {
+      margin-top: 10px;
+      font-size: 14px;
+      font-weight: 700;
+      color: rgba(244,239,232,.5);
+    }
+    .result-confidence span {
+      color: #d4a853;
+      font-size: 22px;
+      font-weight: 900;
+    }
+    .result-top3 {
+      margin-top: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .top3-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: rgba(255,255,255,.03);
+      border-radius: 12px;
+      border: 1px solid rgba(244,239,232,.06);
+    }
+    .top3-rank {
+      flex: 0 0 auto;
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      background: rgba(212,168,83,.15);
+      color: #d4a853;
+      font-size: 13px;
+      font-weight: 900;
+      display: grid; place-items: center;
+    }
+    .top3-genre {
+      flex: 1;
+      text-align: left;
+      font-size: 15px;
+      font-weight: 700;
+    }
+    .top3-bar-wrap {
+      flex: 0 0 auto;
+      width: 80px;
+      height: 6px;
+      background: rgba(255,255,255,.06);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .top3-bar {
+      height: 100%;
+      background: #d4a853;
+      border-radius: 3px;
+      transition: width 0.6s ease;
+    }
+    .top3-pct {
+      flex: 0 0 auto;
+      font-size: 13px;
+      font-weight: 800;
+      color: rgba(244,239,232,.5);
+      width: 48px;
+      text-align: right;
+    }
+    .loading {
+      width: min(420px, 90vw);
+      margin-top: 32px;
+      display: none;
+      text-align: center;
+    }
+    .loading.show { display: block; }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid rgba(212,168,83,.15);
+      border-top-color: #d4a853;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text {
+      font-size: 13px;
+      font-weight: 700;
+      color: rgba(244,239,232,.4);
+    }
+    .file-name {
+      margin-top: 16px;
+      font-size: 12px;
+      font-weight: 700;
+      color: rgba(244,239,232,.35);
+      word-break: break-all;
+    }
+    .error-msg {
+      margin-top: 16px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #e8542a;
+      display: none;
+    }
+    .error-msg.show { display: block; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="header">
+      <h1>B-SIDE</h1>
+      <p>Music Genre Classifier</p>
+    </div>
+
+    <div class="upload-zone" id="uploadZone">
+      <input type="file" id="fileInput" accept=".mp3,.wav,.mp4,.mov,.avi,.mkv,.webm">
+      <div class="upload-icon">&#9835;</div>
+      <div class="upload-text">拖拽或点击上传</div>
+      <div class="upload-hint">MP3 / WAV / MP4 / MOV</div>
+    </div>
+
+    <div class="file-name" id="fileName"></div>
+
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <div class="loading-text">正在分析音乐风格…</div>
+    </div>
+
+    <div class="error-msg" id="errorMsg"></div>
+
+    <div class="result" id="result">
+      <div class="result-card">
+        <div class="result-genre" id="resultGenre"></div>
+        <div class="result-confidence">置信度 <span id="resultConf"></span>%</div>
+        <div class="result-top3" id="resultTop3"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API = "http://localhost:5050/api/classify";
+    const zone = document.getElementById("uploadZone");
+    const input = document.getElementById("fileInput");
+    const fileName = document.getElementById("fileName");
+    const loading = document.getElementById("loading");
+    const result = document.getElementById("result");
+    const errorMsg = document.getElementById("errorMsg");
+
+    zone.addEventListener("click", () => input.click());
+    zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("dragover"); });
+    zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
+    zone.addEventListener("drop", e => {
+      e.preventDefault();
+      zone.classList.remove("dragover");
+      if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    });
+    input.addEventListener("change", () => {
+      if (input.files.length) handleFile(input.files[0]);
+    });
+
+    async function handleFile(file) {
+      fileName.textContent = file.name;
+      result.classList.remove("show");
+      errorMsg.classList.remove("show");
+      loading.classList.add("show");
+
+      const form = new FormData();
+      form.append("file", file);
+
+      try {
+        const res = await fetch(API, { method: "POST", body: form });
+        if (!res.ok) throw new Error("服务器错误: " + res.status);
+        const data = await res.json();
+        showResult(data);
+      } catch (err) {
+        errorMsg.textContent = err.message;
+        errorMsg.classList.add("show");
+      } finally {
+        loading.classList.remove("show");
+      }
+    }
+
+    function showResult(data) {
+      document.getElementById("resultGenre").textContent = data.genre;
+      document.getElementById("resultConf").textContent = data.confidence;
+
+      const top3 = document.getElementById("resultTop3");
+      top3.innerHTML = "";
+      data.top3.forEach((item, i) => {
+        const div = document.createElement("div");
+        div.className = "top3-item";
+        div.innerHTML = `
+          <div class="top3-rank">${i + 1}</div>
+          <div class="top3-genre">${item.genre}</div>
+          <div class="top3-bar-wrap"><div class="top3-bar" style="width:0%"></div></div>
+          <div class="top3-pct">${item.confidence}%</div>
+        `;
+        top3.appendChild(div);
+        requestAnimationFrame(() => {
+          div.querySelector(".top3-bar").style.width = item.confidence + "%";
+        });
+      });
+
+      result.classList.add("show");
+    }
+  </script>
+</body>
+</html>

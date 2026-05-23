@@ -53,6 +53,7 @@ const app = {
   detailCtx: detailCanvas.getContext("2d"),
   presentationPhase: "idle",
   presentationTimer: 0,
+  presentationTimeout: 0,
   lastTickTime: 0
 };
 
@@ -112,6 +113,24 @@ function setGroupOpacity(group, opacity) {
   console.log("[setGroupOpacity] group.index=" + group.userData?.index, "opacity=" + opacity, "meshes=" + meshCount, "collectionId=" + (group.userData?.collectionId || "?"));
 }
 
+function restoreGroupOpacity(group) {
+  group.traverse(function (child) {
+    if (child.isMesh) {
+      var mats = Array.isArray(child.material) ? child.material : [child.material];
+      mats.forEach(function (m) {
+        if (m._origOpacity != null) {
+          m.transparent = true;
+          m.opacity = m._origOpacity;
+        } else {
+          m.transparent = false;
+          m.opacity = 1;
+        }
+        m.needsUpdate = true;
+      });
+    }
+  });
+}
+
 function makeCollection(id, title, spine, palette, photos = [], criterion = "palette") {
   const collection = {
     id,
@@ -125,8 +144,13 @@ function makeCollection(id, title, spine, palette, photos = [], criterion = "pal
   return collection;
 }
 
-const SCATTER_MS = 700;
-const EXIT_ROTATION_SPEED = (2 * Math.PI) / 1400;
+const CASE_PRESENT_MS = 1080;
+const CASE_OPEN_START_MS = 340;
+const CASE_OPEN_MS = 620;
+const PORTRAIT_STACK_ROT_X = THREE.MathUtils.degToRad(60);
+const PORTRAIT_STACK_Y = 0.42;
+const PORTRAIT_STACK_Z = 0.36;
+const PORTRAIT_OPEN_ROT_X = THREE.MathUtils.degToRad(0);
 
 function createGenreCover(palette) {
   var canvas = document.createElement("canvas");
@@ -288,12 +312,12 @@ function wrapText(ctx, text, maxWidth) {
 
 function seedSamples() {
   var genres = {
-    jazz: { title: "Jazz", spine: "JAZZ TAPE", primary: "#e8542a", secondary: "#f0a070", text: "#ffffff" },
-    hiphop: { title: "Hip-Hop", spine: "HIPHOP TAPE", primary: "#4a9fd4", secondary: "#a8d8f0", text: "#ffffff" },
-    rnb: { title: "R&B", spine: "R&B TAPE", primary: "#888888", secondary: "#cccccc", text: "#222222" },
-    electronic: { title: "Electronic", spine: "ELEC TAPE", primary: "#4a2080", secondary: "#8844cc", text: "#ffffff" },
-    folk: { title: "Folk", spine: "FOLK TAPE", primary: "#8b6f47", secondary: "#c4a882", text: "#ffffff" },
-    cinematic: { title: "Cinematic", spine: "CINE TAPE", primary: "#2d5a27", secondary: "#5a8c4e", text: "#ffffff" }
+    jazz: { title: "Jazz", spine: "JAZZ TAPE", primary: "#1a2840", secondary: "#3a5a80", text: "#d0dce8", coverUrl: "./assets/covers/jazz.png" },
+    hiphop: { title: "Hip-Hop", spine: "HIPHOP TAPE", primary: "#8a1010", secondary: "#c82020", text: "#f0e0e0", coverUrl: "./assets/covers/hiphop.png" },
+    rnb: { title: "R&B", spine: "R&B TAPE", primary: "#4a2050", secondary: "#9848a0", text: "#f0e8f0", coverUrl: "./assets/covers/rnb.png" },
+    electronic: { title: "Electronic", spine: "ELEC TAPE", primary: "#0a2a4a", secondary: "#1890c8", text: "#d0e8f0", coverUrl: "./assets/covers/electronic.png" },
+    folk: { title: "Folk", spine: "FOLK TAPE", primary: "#6a5838", secondary: "#b09870", text: "#f0e8d0", coverUrl: "./assets/covers/folk.png" },
+    cinematic: { title: "Cinematic", spine: "CINE TAPE", primary: "#383838", secondary: "#686868", text: "#d0d0d0", coverUrl: "./assets/covers/cinematic.png" }
   };
 
   var videoSeeds = [
@@ -341,7 +365,7 @@ function seedSamples() {
       storedDataUrl: "",
       criterionSource: "palette",
       manualGroupByCriterion: {
-        palette: { key: vs.genre, title: g.title, spine: g.spine }
+        palette: { key: vs.genre, title: g.title, spine: g.spine, primary: g.primary, secondary: g.secondary, text: g.text, coverUrl: g.coverUrl }
       },
       videoUrl: "./assets/videos/" + vs.file,
       coverUrl: "./assets/covers/" + vs.file.replace(/\.mp4$/, ".jpg"),
@@ -361,8 +385,8 @@ function seedSamples() {
 
 async function boot() {
   try {
-    var restored = await restoreSavedLibrary();
-    if (!restored || !allPhotos.length) seedSamples();
+    await removeStoredLibrary();
+    seedSamples();
     collections = buildCollections(app.currentCriterion);
     setupThree();
     setupEvents();
@@ -449,6 +473,39 @@ function createCaseGroup(collection, index) {
   );
   group.add(caseMesh);
 
+  const lidPivot = new THREE.Group();
+  lidPivot.position.set(-1.21, 0, 0.22);
+  const lidCover = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.42, 2.42),
+    new THREE.MeshStandardMaterial({
+      map: coverTexture,
+      roughness: 0.36,
+      side: THREE.DoubleSide
+    })
+  );
+  lidCover.position.set(1.21, 0, 0.018);
+  lidPivot.add(lidCover);
+
+  const lidPlastic = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.48, 2.48),
+    new THREE.MeshPhysicalMaterial({
+      color: 0xffffff,
+      metalness: 0,
+      roughness: 0.04,
+      clearcoat: 1,
+      clearcoatRoughness: 0.05,
+      transparent: true,
+      opacity: 0.18,
+      side: THREE.DoubleSide
+    })
+  );
+  lidPlastic.material._origOpacity = 0.18;
+  lidPlastic.position.set(1.21, 0, 0.024);
+  lidPivot.add(lidPlastic);
+
+  group.userData.lidPivot = lidPivot;
+  group.add(lidPivot);
+
   const plastic = new THREE.Mesh(
     new THREE.PlaneGeometry(2.48, 2.48),
     new THREE.MeshPhysicalMaterial({
@@ -462,8 +519,21 @@ function createCaseGroup(collection, index) {
       side: THREE.DoubleSide
     })
   );
+  plastic.material._origOpacity = 0.24;
   plastic.position.z = 0.188;
   group.add(plastic);
+
+  // CD disc image inside the case
+  const cdTexture = new THREE.TextureLoader().load("./assets/cd.png");
+  const cdDisc = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.42, 2.42),
+    new THREE.MeshStandardMaterial({
+      map: cdTexture,
+      roughness: 0.3
+    })
+  );
+  cdDisc.position.z = 0.184;
+  group.add(cdDisc);
 
   const hinge = new THREE.Mesh(
     new THREE.BoxGeometry(0.1, 2.46, 0.4),
@@ -475,6 +545,7 @@ function createCaseGroup(collection, index) {
       opacity: 0.38
     })
   );
+  hinge.material._origOpacity = 0.38;
   hinge.position.set(-1.11, 0, 0.03);
   group.add(hinge);
 
@@ -555,21 +626,15 @@ function makeCoverTexture(collection) {
     c.strokeRect(72, 72, 880, 880);
   }
 
-  console.log("[makeCoverTexture] collection=" + collection.title, "coverUrl=" + (collection.photos[0]?.coverUrl || "none"), "source=" + (collection.photos[0]?.source ? "present" : "none"));
-
   drawCoverFrame(collection.photos[0]?.source);
 
-  var coverUrl = collection.photos[0]?.coverUrl;
+  var coverUrl = collection.palette.coverUrl;
   if (coverUrl) {
     var img = new Image();
     img.onload = function() {
-      console.log("[makeCoverTexture] cover image loaded ok:", coverUrl);
-      drawCoverFrame(img);
+      c.clearRect(0, 0, 1024, 1024);
+      c.drawImage(img, -52, -52, 1128, 1128);
       texture.needsUpdate = true;
-      console.log("[makeCoverTexture] texture.needsUpdate set to true after cover load, texture=", texture);
-    };
-    img.onerror = function(e) {
-      console.error("[makeCoverTexture] cover image FAILED to load:", coverUrl, e);
     };
     img.src = coverUrl;
   }
@@ -577,7 +642,6 @@ function makeCoverTexture(collection) {
   var texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 8;
-  console.log("[makeCoverTexture] returning texture, uuid=" + texture.uuid + ", type=" + texture.constructor.name);
   return texture;
 }
 
@@ -772,6 +836,70 @@ function makeFrontSpineTexture(collection, label = collection.spine, emphasis = 
   return texture;
 }
 
+function setCaseLidOpen(group, amount) {
+  const lid = group.userData?.lidPivot;
+  if (!lid) return;
+  const t = clamp(amount, 0, 1);
+  const eased = t * t * (3 - 2 * t);
+  const target = -Math.PI * 0.58 * eased;
+  lid.rotation.y += (target - lid.rotation.y) * 0.18;
+}
+
+function completeCasePresentation() {
+  if (app.presentationPhase !== "scattering") return;
+  clearTimeout(app.presentationTimeout);
+  app.presentationPhase = "presenting";
+  app.presentationTimer = CASE_PRESENT_MS;
+  app.presentationTimeout = 0;
+  initVinylStage();
+  const collection = collections[app.selectedIndex] || collections[0];
+  vinyl.photos = collection.photos.slice();
+  vinyl.selectedIndex = 0;
+  vinyl.previousIndex = 0;
+  vinyl.previewFromIndex = 0;
+  vinyl.previewStartedAt = performance.now();
+  vinyl.position = 0;
+  vinyl.targetPosition = 0;
+  vinyl.positionVelocity = 0;
+  vinyl.dragVelocity = 0;
+  vinyl.angle = 0;
+  vinyl.thumbs = vinyl.photos.map(function(photo) {
+    var c = document.createElement("canvas");
+    var size = 260;
+    var sw = photo.source.width || 480;
+    var sh = photo.source.height || 640;
+    var ratio = sw / sh;
+    c.width = Math.max(80, Math.round(size * ratio));
+    c.height = size;
+    var tctx = c.getContext("2d");
+    tctx.imageSmoothingEnabled = true;
+    tctx.imageSmoothingQuality = "high";
+    tctx.drawImage(photo.source, 0, 0, c.width, c.height);
+    return c;
+  });
+  vinyl.photos.forEach(function(photo) {
+    if (photo.coverUrl && !photo._coverImg) {
+      var img = new Image();
+      img.onload = function() {
+        photo._coverImg = img;
+        console.log("[vinyl] cover loaded: " + photo.coverUrl);
+      };
+      img.onerror = function() {
+        console.error("[vinyl] cover failed: " + photo.coverUrl);
+      };
+      img.src = photo.coverUrl;
+    }
+  });
+  vinyl.collectionId = collection.id;
+  vinyl.palette = collection.palette;
+  vinyl.phase = VS_SLIDEUP;
+  vinyl.timer = performance.now();
+  vinyl.lastFrameTime = vinyl.timer;
+  vinyl.vinylY = vinyl.h + vinyl.vinylR * 1.1;
+  vinyl.vinylTargetY = vinyl.cy;
+  startVinylLoop();
+}
+
 function tick() {
   try {
     app.frame = requestAnimationFrame(tick);
@@ -782,56 +910,9 @@ function tick() {
 
     if (app.presentationPhase === "scattering") {
       app.presentationTimer += dtMs;
-      if (app.presentationTimer >= SCATTER_MS) {
-        console.log("[tick] scatter complete, transitioning to presenting");
-        app.presentationPhase = "presenting";
-        initVinylStage();
-        const collection = collections[app.selectedIndex] || collections[0];
-        vinyl.photos = collection.photos.slice();
-        vinyl.selectedIndex = 0;
-        vinyl.previousIndex = 0;
-        vinyl.previewFromIndex = 0;
-        vinyl.previewStartedAt = performance.now();
-        vinyl.position = 0;
-        vinyl.targetPosition = 0;
-        vinyl.positionVelocity = 0;
-        vinyl.dragVelocity = 0;
-        vinyl.angle = 0;
-        vinyl.thumbs = vinyl.photos.map(function(photo) {
-          var c = document.createElement("canvas");
-          var size = 260;
-          var sw = photo.source.width || 480;
-          var sh = photo.source.height || 640;
-          var ratio = sw / sh;
-          c.width = Math.max(80, Math.round(size * ratio));
-          c.height = size;
-          var tctx = c.getContext("2d");
-          tctx.imageSmoothingEnabled = true;
-          tctx.imageSmoothingQuality = "high";
-          tctx.drawImage(photo.source, 0, 0, c.width, c.height);
-          return c;
-        });
-        vinyl.photos.forEach(function(photo) {
-          if (photo.coverUrl && !photo._coverImg) {
-            var img = new Image();
-            img.onload = function() {
-              photo._coverImg = img;
-              console.log("[vinyl] cover loaded: " + photo.coverUrl);
-            };
-            img.onerror = function() {
-              console.error("[vinyl] cover failed: " + photo.coverUrl);
-            };
-            img.src = photo.coverUrl;
-          }
-        });
-        vinyl.collectionId = collection.id;
-        vinyl.palette = collection.palette;
-        vinyl.phase = VS_SLIDEUP;
-        vinyl.timer = performance.now();
-        vinyl.lastFrameTime = vinyl.timer;
-        vinyl.vinylY = vinyl.h + vinyl.vinylR * 1.1;
-        vinyl.vinylTargetY = vinyl.cy;
-        startVinylLoop();
+      if (app.presentationTimer >= CASE_PRESENT_MS) {
+        console.log("[tick] case open complete, transitioning to presenting");
+        completeCasePresentation();
       }
     }
 
@@ -853,57 +934,66 @@ function tick() {
       if (portrait) {
         const spiralPhase = app.spin * 0.38 + index * 0.13;
         const focusFalloff = 1 - Math.min(Math.abs(clamped) * 0.08, 0.34);
+        const openAmount = app.presentationPhase === "presenting"
+          ? 1
+          : clamp((app.presentationTimer - CASE_OPEN_START_MS) / CASE_OPEN_MS, 0, 1);
 
         if (isAnimating && app.flippedId) {
           const spread = index - flippedIndex;
-          const dir = spread > 0 ? 1 : -1;
-          const dist = Math.abs(spread);
           if (isFlipped) {
             targetX = 0;
-            targetY = -4.5;
-            targetZ = 1.2;
-            targetRotX = THREE.MathUtils.degToRad(8);
+            targetY = 1.06;
+            targetZ = 2.86;
+            targetRotX = PORTRAIT_OPEN_ROT_X;
             targetRotZ = 0;
-            targetScale = 0.5;
-            targetRotY = group.rotation.y + EXIT_ROTATION_SPEED * dtMs;
+            targetScale = 0.76;
+            targetRotY = 0;
+            setCaseLidOpen(group, openAmount);
           } else {
             targetX = 0;
             targetRotY = 0;
-            targetY = -clamped * 0.64;
-            targetZ = 0.04 - Math.abs(clamped) * 0.025;
-            targetRotX = THREE.MathUtils.degToRad(68);
+            targetY = spread < 0
+              ? 2.5 + Math.abs(spread) * 0.22
+              : -1.05 - Math.abs(spread) * 0.34;
+            targetZ = -0.5 - Math.abs(spread) * 0.08;
+            targetRotX = PORTRAIT_STACK_ROT_X;
             targetRotZ = spiralPhase * focusFalloff;
-            targetScale = 0.76 - Math.min(Math.abs(clamped) * 0.02, 0.1);
+            targetScale = 0.52 - Math.min(Math.abs(spread) * 0.026, 0.11);
+            setCaseLidOpen(group, 0);
           }
         } else if (app.flippedId) {
           const spread = index - flippedIndex;
           if (isFlipped) {
-            targetY = 1.18;
-            targetZ = 2.18;
-            targetRotX = THREE.MathUtils.degToRad(-2);
+            targetY = 1.06;
+            targetZ = 2.86;
+            targetRotX = PORTRAIT_OPEN_ROT_X;
             targetRotZ = 0;
-            targetScale = 0.688;
+            targetScale = 0.76;
+            setCaseLidOpen(group, 1);
           } else {
             targetY = spread < 0
-              ? 2.52 + Math.abs(spread) * 0.24
-              : 0.08 - Math.abs(spread) * 0.42;
-            targetZ = -0.42 - Math.abs(spread) * 0.12;
-            targetRotX = THREE.MathUtils.degToRad(68);
+              ? 2.5 + Math.abs(spread) * 0.22
+              : -1.05 - Math.abs(spread) * 0.34;
+            targetZ = -0.5 - Math.abs(spread) * 0.08;
+            targetRotX = PORTRAIT_STACK_ROT_X;
             targetRotZ = spiralPhase * 0.62;
-            targetScale = 0.448 - Math.min(Math.abs(spread) * 0.028, 0.096);
+            targetScale = 0.46 - Math.min(Math.abs(spread) * 0.026, 0.1);
+            setCaseLidOpen(group, 0);
           }
           targetX = 0;
           targetRotY = 0;
         } else {
           targetX = 0;
           targetRotY = 0;
-          targetY = -clamped * 0.64;
-          targetZ = 0.04 - Math.abs(clamped) * 0.025;
-          targetRotX = THREE.MathUtils.degToRad(68);
+          targetY = PORTRAIT_STACK_Y - clamped * 0.58;
+          targetZ = PORTRAIT_STACK_Z - Math.abs(clamped) * 0.022;
+          targetRotX = PORTRAIT_STACK_ROT_X;
           targetRotZ = spiralPhase * focusFalloff;
-          targetScale = 0.76 - Math.min(Math.abs(clamped) * 0.02, 0.1);
+          targetScale = 0.78 - Math.min(Math.abs(clamped) * 0.02, 0.1);
+          setCaseLidOpen(group, 0);
         }
       } else {
+        setCaseLidOpen(group, isFlipped ? 1 : 0);
         targetX = isFlipped ? 0 : clamped * 0.76 + (isReceding ? retreatDirection * 4.6 : 0);
         targetY = isFlipped ? -0.04 : Math.abs(clamped) * -0.015;
         targetZ = isFlipped ? 2.04 : (isReceding ? -1.45 : 0.05) - Math.abs(clamped) * 0.08;
@@ -925,24 +1015,26 @@ function tick() {
       const nextScale = group.scale.x + (targetScale - group.scale.x) * 0.11;
       group.scale.setScalar(nextScale);
 
-      if (isAnimating && app.flippedId && !isFlipped && app.presentationPhase === "scattering") {
-        var fadeT = Math.min(app.presentationTimer / SCATTER_MS, 1);
-        setGroupOpacity(group, 1 - fadeT);
+      if (isAnimating && app.flippedId && !isFlipped) {
+        var dimT = app.presentationPhase === "presenting" ? 1 : Math.min(app.presentationTimer / CASE_PRESENT_MS, 1);
+        var dimOpacity = 1 - dimT * 0.54;
+        if (Math.abs((group.userData._dimOpacity || 1) - dimOpacity) > 0.025) {
+          setGroupOpacity(group, dimOpacity);
+          group.userData._dimOpacity = dimOpacity;
+        }
         group.userData._faded = true;
-        if (fadeT >= 0.98) { group.visible = false; }
-      } else if (group.userData._faded && app.presentationPhase !== "scattering") {
-        group.visible = false;
+        group.visible = true;
       }
 
       if (!isAnimating) {
         if (group.userData._faded) {
-          console.log("[tick] restoring faded group idx=" + index + " to opacity 1, _faded=false");
-          setGroupOpacity(group, 1);
+          restoreGroupOpacity(group);
           group.userData._faded = false;
+          group.userData._dimOpacity = 1;
         }
-        group.visible = Math.abs(clamped) < (portrait ? 4.2 : 8) || isReceding || isFlipped;
+        group.visible = Math.abs(clamped) < (portrait ? 8 : 8) || isReceding || isFlipped;
       } else if (!group.userData._faded) {
-        group.visible = Math.abs(clamped) < (portrait ? 4.2 : 8) || isReceding || isFlipped;
+        group.visible = Math.abs(clamped) < (portrait ? 8 : 8) || isReceding || isFlipped;
       }
     });
 
@@ -963,7 +1055,7 @@ function resize() {
   app.camera.aspect = w / h;
   const portrait = h >= w;
   app.camera.fov = portrait ? 39 : 34;
-  app.camera.position.set(0, portrait ? 0.12 : 0.14, portrait ? 10.2 : 8.2);
+  app.camera.position.set(0, portrait ? -0.35 : 0.14, portrait ? 10.2 : 8.2);
   app.camera.lookAt(0, 0, 0);
   app.camera.updateProjectionMatrix();
   syncPresentationClass();
@@ -986,8 +1078,22 @@ function setupEvents() {
   vinylStage.addEventListener("pointercancel", onVinylPointerUp);
   vinylStage.addEventListener("click", onVinylClick);
   backBtn.addEventListener("click", () => closeDetail());
+  detail.addEventListener("click", function(e) {
+    if (e.target === detailCanvas) {
+      var w = detailCanvas.width / (Math.min(devicePixelRatio || 1, 2));
+      var h = detailCanvas.height / (Math.min(devicePixelRatio || 1, 2));
+      var rect = detailCanvas.getBoundingClientRect();
+      var x = e.clientX - rect.left;
+      var y = e.clientY - rect.top;
+      var portrait = h >= w;
+      var onPhoto = portrait
+        ? (y > h * 0.38 && y < h - 104)
+        : (x > w * 0.42);
+      if (!onPhoto) closeDetail();
+    }
+  });
   fmBtn?.addEventListener("click", openFmEntry);
-  drawerGrid.addEventListener("click", onDrawerClick);
+  photoDrawer.addEventListener("click", onDrawerClick);
   drawerGrid.addEventListener("mouseover", onDrawerHover);
   drawerGrid.addEventListener("mouseleave", () => updateCaption());
   var videoEl = document.getElementById("videoEl");
@@ -995,6 +1101,122 @@ function setupEvents() {
   videoEl.addEventListener("click", toggleVideoPlayPause);
   videoEl.addEventListener("touchstart", onVideoTouchStart, { passive: true });
   videoEl.addEventListener("touchend", onVideoTouchEnd, { passive: true });
+
+  function showToast(text) {
+    var toast = document.getElementById("classifyToast");
+    var textEl = document.getElementById("classifyToastText");
+    if (!toast || !textEl) return;
+    textEl.textContent = text;
+    toast.style.opacity = "1";
+    toast.style.transform = "translate(-50%,-50%) scale(1)";
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(function() {
+      toast.style.opacity = "0";
+      toast.style.transform = "translate(-50%,-50%) scale(0.9)";
+    }, 2200);
+  }
+
+  window.addEventListener("bside:classify-add", function(e) {
+    var detail = e.detail;
+    var genreKey = detail.genre.toLowerCase();
+    var fileName = detail.fileName;
+    var fileUrl = detail.fileUrl;
+    var isVideo = detail.isVideo;
+
+    var genreTitles = {
+      jazz: "Jazz", hiphop: "HipHop", folk: "Folk",
+      electronic: "Electronic", classical: "Classical", pop: "Pop"
+    };
+    var genreSpines = {
+      jazz: "JAZZ TAPE", hiphop: "HIPHOP TAPE", folk: "FOLK TAPE",
+      electronic: "ELEC TAPE", classical: "CLASSICAL TAPE", pop: "POP TAPE"
+    };
+    var genreStyles = {
+      jazz:        { primary: "#1a2840", secondary: "#3a5a80", text: "#d0dce8", coverUrl: "./assets/covers/jazz.png" },
+      hiphop:      { primary: "#8a1010", secondary: "#c82020", text: "#f0e0e0", coverUrl: "./assets/covers/hiphop.png" },
+      folk:        { primary: "#6a5838", secondary: "#b09870", text: "#f0e8d0", coverUrl: "./assets/covers/folk.png" },
+      electronic:  { primary: "#0a2a4a", secondary: "#1890c8", text: "#d0e8f0", coverUrl: "./assets/covers/electronic.png" },
+      classical:   { primary: "#383838", secondary: "#686868", text: "#d0d0d0", coverUrl: "./assets/covers/cinematic.png" },
+      pop:         { primary: "#888888", secondary: "#cccccc", text: "#222222", coverUrl: "./assets/covers/rnb.png" }
+    };
+
+    function addWithThumb(source) {
+      var photo = {
+        id: "upload-" + Date.now(),
+        name: fileName,
+        source: source,
+        paletteLabel: genreTitles[genreKey] || genreKey,
+        sceneLabel: "",
+        paletteKey: genreKey,
+        dominantColor: (genreStyles[genreKey] || {}).primary || "#888888",
+        timeLabel: "导入",
+        timeKey: "upload",
+        timeSource: "upload",
+        locationLabel: "",
+        locationKey: "upload-" + genreKey,
+        locationSource: "upload",
+        deviceLabel: "",
+        deviceKey: "",
+        thumbUrl: "",
+        storedDataUrl: "",
+        criterionSource: "palette",
+        manualGroupByCriterion: {
+          palette: {
+            key: genreKey,
+            title: genreTitles[genreKey] || genreKey,
+            spine: genreSpines[genreKey] || genreKey.toUpperCase(),
+            primary: (genreStyles[genreKey] || {}).primary || "#888888",
+            secondary: (genreStyles[genreKey] || {}).secondary || "#cccccc",
+            text: (genreStyles[genreKey] || {}).text || "#222222",
+            coverUrl: (genreStyles[genreKey] || {}).coverUrl || ""
+          }
+        }
+      };
+      if (isVideo) photo.videoUrl = fileUrl;
+      allPhotos.push(photo);
+      regroupCollections(app.currentCriterion);
+      showToast("已完成识别，风格为 " + (genreTitles[genreKey] || genreKey));
+    }
+
+    if (isVideo) {
+      var v = document.createElement("video");
+      v.preload = "auto";
+      v.muted = true;
+      v.src = fileUrl;
+      v.addEventListener("loadeddata", function() {
+        v.currentTime = Math.min(1, v.duration / 2);
+      });
+      v.addEventListener("seeked", function() {
+        var c = document.createElement("canvas");
+        c.width = 480; c.height = 640;
+        var ctx = c.getContext("2d");
+        ctx.fillStyle = "#080808";
+        ctx.fillRect(0, 0, 480, 640);
+        var scale = Math.max(480 / v.videoWidth, 640 / v.videoHeight);
+        var dw = v.videoWidth * scale, dh = v.videoHeight * scale;
+        ctx.drawImage(v, (480 - dw) / 2, (640 - dh) / 2, dw, dh);
+        addWithThumb(c);
+      });
+    } else {
+      var c = document.createElement("canvas");
+      c.width = 480; c.height = 640;
+      var ctx = c.getContext("2d");
+      var grad = ctx.createLinearGradient(0, 0, 480, 640);
+      grad.addColorStop(0, "#1a1714");
+      grad.addColorStop(1, "#020202");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 480, 640);
+      ctx.fillStyle = "rgba(244,239,232,.5)";
+      ctx.font = "900 36px Arial, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("♪", 240, 280);
+      ctx.font = "600 14px Arial, sans-serif";
+      ctx.fillStyle = "rgba(244,239,232,.35)";
+      ctx.fillText(fileName, 240, 340);
+      addWithThumb(c);
+    }
+  });
 }
 
 function emitBehavior(eventType, data) {
@@ -1140,6 +1362,8 @@ function presentCollection(index) {
   app.presentationPhase = "scattering";
   app.presentationTimer = 0;
   app.lastTickTime = 0;
+  clearTimeout(app.presentationTimeout);
+  app.presentationTimeout = setTimeout(completeCasePresentation, CASE_PRESENT_MS + 80);
   updateCaption();
   emitBehavior("cd-open", { collectionId: collections[index]?.id, index });
 }
@@ -1151,6 +1375,8 @@ function hidePresentation() {
     stopVinylLoop();
     vinylStage.classList.remove("active");
   }
+  clearTimeout(app.presentationTimeout);
+  app.presentationTimeout = 0;
   restorePresentedCase();
   app.flippedId = null;
   app.presentationPhase = "idle";
@@ -1167,9 +1393,10 @@ function restorePresentedCase() {
   console.log("[restorePresentedCase] before restore - group.visible=" + group.visible + ", group.userData._faded=" + group.userData._faded + ", rotation.y=" + group.rotation.y);
   group.rotation.y = 0;
   group.userData._faded = false;
+  group.userData._dimOpacity = 1;
   group.visible = true;
-  setGroupOpacity(group, 1);
-  console.log("[restorePresentedCase] after restore - group.visible=" + group.visible + ", _faded=" + group.userData._faded);
+  if (group.userData.lidPivot) group.userData.lidPivot.rotation.y = 0;
+  restoreGroupOpacity(group);
 }
 
 function syncPresentationClass() {
@@ -1230,7 +1457,10 @@ function hideDrawer() {
 
 function onDrawerClick(event) {
   const button = event.target.closest(".photo-thumb");
-  if (!button) return;
+  if (!button) {
+    hidePresentation();
+    return;
+  }
   const photoIndex = Number(button.dataset.photoIndex || 0);
   app.drawerPhoto = photoIndex;
   app.detailPhoto = app.drawerPhoto;
@@ -1260,11 +1490,13 @@ function openDetail(index) {
   app.detailPhoto = 0;
   hideDrawer();
   detail.classList.add("open");
+  document.getElementById("hud").style.display = "none";
   drawDetail();
 }
 
 function closeDetail() {
   detail.classList.remove("open");
+  document.getElementById("hud").style.display = "";
   app.flippedId = collections[app.detailCollection].id;
   if (innerHeight >= innerWidth) renderDrawer(app.detailCollection);
   updateCaption();
@@ -1427,8 +1659,14 @@ function buildCollections(criterion) {
   return Array.from(groups.values())
     .sort((a, b) => String(a.info.sortValue).localeCompare(String(b.info.sortValue), "zh-Hans-CN"))
     .map(({ info, photos }) => {
-      const firstColor = photos[0]?.dominantColor || "#8a6a55";
-      return makeCollection(info.key, info.title, info.spine, makeAdaptivePalette(firstColor), photos, criterion);
+      const manualPalette = photos[0]?.manualGroupByCriterion?.[criterion];
+      let palette;
+      if (manualPalette && manualPalette.primary) {
+        palette = { primary: manualPalette.primary, secondary: manualPalette.secondary, text: manualPalette.text, coverUrl: manualPalette.coverUrl };
+      } else {
+        palette = makeAdaptivePalette(photos[0]?.dominantColor || "#8a6a55");
+      }
+      return makeCollection(info.key, info.title, info.spine, palette, photos, criterion);
     });
 }
 
@@ -1507,11 +1745,6 @@ function drawDetail() {
 }
 
 function drawPhotoMeta(ctx, photo, x, y, w, h) {
-  const grd = ctx.createLinearGradient(x, y + h * 0.45, x, y + h);
-  grd.addColorStop(0, "rgba(0,0,0,0)");
-  grd.addColorStop(1, "rgba(0,0,0,.72)");
-  ctx.fillStyle = grd;
-  ctx.fillRect(x, y, w, h);
   text(ctx, photo.name, x + 26, y + h - 68, 22, "#fff8ec", 900, "left", "Georgia");
   text(ctx, String(app.detailPhoto + 1).padStart(2, "0"), x + w - 24, y + h - 36, clamp(w * .12, 48, 86), "rgba(255,248,236,.92)", 900, "right", "Impact");
 }

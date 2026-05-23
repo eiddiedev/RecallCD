@@ -2,3 +2,6 @@ js/config.js
 node_modules/
 .env
 assets/videos/*.mp4
+__pycache__/
+*.pyc
+venv/
