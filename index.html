@@ -102,38 +102,24 @@
       right: 22px;
       z-index: 2;
       pointer-events: auto;
-      width: 58px;
-      height: 58px;
-      border: 1px solid rgba(244,239,232,.2);
-      border-radius: 50%;
+      width: 48px;
+      height: 48px;
+      border: 0;
+      border-radius: 0;
       padding: 0;
-      display: grid;
-      place-items: center;
-      color: #fff7ea;
-      background: rgba(10,9,8,.58);
-      box-shadow: 0 16px 42px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.12);
-      backdrop-filter: blur(14px);
-      transition: opacity .28s ease, transform .28s ease, border-color .2s ease;
+      display: block;
+      background: transparent;
+      transition: opacity .28s ease, transform .28s ease;
     }
     .fm-btn:active {
-      transform: scale(.94);
-      border-color: rgba(244,239,232,.42);
+      transform: scale(.88);
     }
     .fm-logo {
-      width: 46px;
-      height: 46px;
+      width: 48px;
+      height: 48px;
       object-fit: contain;
-      filter: drop-shadow(0 5px 12px rgba(0,0,0,.38));
-    }
-    .fm-label {
-      position: absolute;
-      bottom: 7px;
-      left: 0;
-      right: 0;
-      font-size: 9px;
-      font-weight: 900;
-      letter-spacing: .06em;
-      text-align: center;
+      filter: grayscale(1) brightness(1.6) contrast(1.1);
+      opacity: 0.8;
     }
     body.presenting .fm-btn {
       opacity: 0;
@@ -337,6 +323,499 @@
       font-weight: 800;
     }
     .error.show { display: grid; }
+
+    /* ── B-SIDE FM Overlay ── */
+    #fmOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      background:
+        linear-gradient(rgba(0,0,0,.55), rgba(0,0,0,.55)),
+        url('./images/black-wallpaper.jpeg') center / cover no-repeat,
+        #020202;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.38s ease;
+      overflow: hidden;
+    }
+    #fmOverlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    #fmContainer {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      overflow: hidden;
+    }
+    .fm-close {
+      position: absolute;
+      top: 18px;
+      right: 22px;
+      z-index: 2;
+      width: 40px;
+      height: 40px;
+      border: 1px solid rgba(244,239,232,.15);
+      border-radius: 50%;
+      background: rgba(0,0,0,.5);
+      color: #f4efe8;
+      font-size: 22px;
+      line-height: 1;
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .fm-close:active {
+      background: rgba(255,255,255,.12);
+      border-color: rgba(244,239,232,.3);
+    }
+    .fm-hero {
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 80px 24px 20px;
+    }
+    .fm-hero-logo {
+      width: min(120px, 32vw);
+      height: auto;
+      border-radius: 10px;
+      filter: drop-shadow(0 8px 24px rgba(0,0,0,.6));
+    }
+    .fm-hero-title {
+      font-family: Impact, "Arial Black", Arial, sans-serif;
+      font-size: clamp(28px, 8vw, 42px);
+      color: #f3ece1;
+      letter-spacing: 0.04em;
+      margin: 18px 0 4px;
+      text-align: center;
+    }
+    .fm-hero-sub {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      color: rgba(244,239,232,.38);
+      text-transform: uppercase;
+    }
+    .fm-insight {
+      flex-shrink: 0;
+      margin: 8px 24px 8px;
+      padding: 0;
+      border-radius: 14px;
+      background: transparent;
+      border: none;
+    }
+    .fm-insight-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border: 1px solid rgba(244,239,232,.12);
+      border-radius: 10px;
+      background: rgba(255,255,255,.04);
+      color: rgba(244,239,232,.5);
+      font-size: 10px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .fm-insight-toggle:active {
+      background: rgba(255,255,255,.1);
+      border-color: rgba(244,239,232,.25);
+    }
+    .fm-insight-i {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: rgba(212,168,83,.2);
+      color: #d4a853;
+      font-size: 9px;
+      font-weight: 900;
+      font-style: italic;
+      display: grid;
+      place-items: center;
+      line-height: 1;
+    }
+    .fm-popup-mask {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0);
+      backdrop-filter: blur(0px);
+      -webkit-backdrop-filter: blur(0px);
+      pointer-events: none;
+      transition: background 0.3s ease, backdrop-filter 0.3s ease;
+    }
+    .fm-popup-mask.open {
+      background: rgba(0,0,0,.45);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      pointer-events: auto;
+    }
+    .fm-popup {
+      width: min(300px, 82vw);
+      padding: 18px;
+      border-radius: 18px;
+      background: rgba(40,36,32,.72);
+      border: 1px solid rgba(244,239,232,.1);
+      box-shadow: 0 16px 48px rgba(0,0,0,.5);
+      opacity: 0;
+      transform: scale(0.92) translateY(10px);
+      transition: opacity 0.28s ease, transform 0.28s ease;
+    }
+    .fm-popup-mask.open .fm-popup {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+    .fm-insight-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .fm-insight-ai {
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      color: #d4a853;
+      text-transform: uppercase;
+    }
+    .fm-insight-conf {
+      font-size: 10px;
+      font-weight: 700;
+      color: rgba(244,239,232,.35);
+    }
+    .fm-insight-text {
+      font-size: 13px;
+      line-height: 1.55;
+      color: rgba(244,239,232,.78);
+      margin: 0 0 6px;
+    }
+    .fm-insight-scene {
+      font-size: 11px;
+      font-weight: 700;
+      color: rgba(244,239,232,.4);
+      margin: 0;
+    }
+    .fm-cards {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 4px 36px 16px;
+      -webkit-overflow-scrolling: touch;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .fm-card {
+      border-radius: 16px;
+      padding: 14px 16px;
+      background: rgba(255,255,255,.04);
+      border: 1px solid rgba(244,239,232,.08);
+      animation: fmCardIn 0.35s ease both;
+      animation-delay: var(--delay, 0s);
+    }
+    @keyframes fmCardIn {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .fm-card--loading {
+      height: 140px;
+      position: relative;
+      overflow: hidden;
+      animation: none;
+    }
+    .fm-shimmer {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(244,239,232,.04), transparent);
+      animation: fmShimmer 1.2s ease infinite;
+    }
+    @keyframes fmShimmer {
+      from { transform: translateX(-100%); }
+      to { transform: translateX(100%); }
+    }
+    .fm-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .fm-card-type {
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      color: #d4a853;
+      padding: 2px 8px;
+      border-radius: 6px;
+      background: rgba(212,168,83,.12);
+    }
+    .fm-card-duration {
+      font-size: 11px;
+      font-weight: 700;
+      color: rgba(244,239,232,.35);
+      font-variant-numeric: tabular-nums;
+    }
+    .fm-card-title {
+      font-size: 16px;
+      font-weight: 800;
+      color: #f4efe8;
+      margin: 0;
+      line-height: 1.3;
+    }
+    .fm-card-title-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .fm-card-info-btn {
+      flex: 0 0 auto;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 1px solid rgba(212,168,83,.3);
+      background: rgba(212,168,83,.1);
+      color: #d4a853;
+      font-size: 10px;
+      font-weight: 900;
+      font-style: italic;
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .fm-card-info-btn:active {
+      background: rgba(212,168,83,.25);
+    }
+    .fm-card-info-close {
+      display: none;
+    }
+    .fm-card-reason {
+      font-size: 13px;
+      line-height: 1.5;
+      color: rgba(244,239,232,.65);
+      margin: 0 0 10px;
+    }
+    .fm-card-info {
+      display: none;
+    }
+    .fm-card-memory {
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: rgba(255,255,255,.03);
+      margin-bottom: 10px;
+    }
+    .fm-card-memory-label {
+      font-size: 9px;
+      font-weight: 900;
+      letter-spacing: 0.1em;
+      color: rgba(244,239,232,.3);
+      text-transform: uppercase;
+      display: block;
+      margin-bottom: 4px;
+    }
+    .fm-card-memory-text {
+      font-size: 12px;
+      line-height: 1.5;
+      color: rgba(244,239,232,.55);
+      margin: 0;
+      font-style: italic;
+    }
+    .fm-card-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .fm-card-tag {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 8px;
+      background: rgba(244,239,232,.06);
+      color: rgba(244,239,232,.45);
+    }
+    .fm-card-link {
+      display: none;
+    }
+    .fm-card-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 10px;
+    }
+    .fm-card-actions {
+      display: flex;
+      gap: 6px;
+    }
+    .fm-card-mv {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: 1px solid rgba(244,239,232,.15);
+      background: rgba(244,239,232,.06);
+      color: rgba(244,239,232,.5);
+      font-size: 10px;
+      font-weight: 900;
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s;
+    }
+    .fm-card-mv:active {
+      background: rgba(244,239,232,.15);
+      color: rgba(244,239,232,.8);
+    }
+    .fm-card-play {
+      flex: 0 0 auto;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: 1px solid rgba(212, 168, 83, 0.25);
+      background: rgba(212, 168, 83, 0.1);
+      color: #d4a853;
+      font-size: 13px;
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.15s;
+    }
+    .fm-card-play:active {
+      transform: scale(0.9);
+      background: rgba(212, 168, 83, 0.25);
+    }
+    .fm-card-play.playing {
+      background: rgba(212, 168, 83, 0.3);
+      border-color: rgba(212, 168, 83, 0.5);
+    }
+    .fm-player {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 30;
+      transform: translateY(100%);
+      transition: transform 0.4s cubic-bezier(.2,.86,.2,1);
+      padding: 0 16px calc(8px + env(safe-area-inset-bottom));
+    }
+    .fm-player.open {
+      transform: translateY(0);
+    }
+    .fm-player-inner {
+      background: rgba(30,27,24,.88);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 16px 16px 0 0;
+      border: 1px solid rgba(244,239,232,.08);
+      padding: 10px;
+      overflow: hidden;
+    }
+    .fm-player-loading {
+      text-align: center;
+      padding: 20px;
+      color: rgba(244,239,232,.4);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .fm-player-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 4px;
+    }
+    .fm-player-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .fm-player-name {
+      display: block;
+      font-size: 13px;
+      font-weight: 700;
+      color: #f4efe8;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .fm-player-artist {
+      display: block;
+      font-size: 11px;
+      color: rgba(244,239,232,.4);
+    }
+    .fm-player-toggle {
+      flex: 0 0 auto;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: 1px solid rgba(212,168,83,.25);
+      background: rgba(212,168,83,.1);
+      color: #d4a853;
+      font-size: 12px;
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      letter-spacing: -2px;
+    }
+    .fm-empty {
+      display: grid;
+      place-items: center;
+      height: 200px;
+      text-align: center;
+    }
+    .fm-empty-text {
+      font-size: 14px;
+      color: rgba(244,239,232,.35);
+      font-weight: 700;
+    }
+    .fm-footer {
+      flex-shrink: 0;
+      padding: 10px 20px 80px;
+      text-align: center;
+    }
+    .fm-redistill {
+      border: 1px solid rgba(244,239,232,.18);
+      border-radius: 22px;
+      padding: 10px 24px;
+      background: rgba(255,255,255,.05);
+      color: rgba(244,239,232,.7);
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .fm-redistill:active {
+      transform: scale(0.96);
+      background: rgba(255,255,255,.1);
+    }
+    .fm-redistill:disabled {
+      opacity: 0.4;
+      pointer-events: none;
+    }
+    .fm-redistill-icon {
+      font-size: 15px;
+      display: inline-block;
+      animation: fmSpin 2s linear infinite;
+    }
+    .fm-redistill:disabled .fm-redistill-icon {
+      animation: fmSpin 0.6s linear infinite;
+    }
+    @keyframes fmSpin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .fm-footer-note {
+      font-size: 10px;
+      color: rgba(244,239,232,.25);
+      margin: 8px 0 0;
+    }
   </style>
 </head>
 <body>
@@ -351,8 +830,7 @@
       <p></p>
     </div>
     <button id="fmBtn" class="fm-btn" type="button" aria-label="打开 B-SIDE FM" title="B-SIDE FM">
-      <img class="fm-logo" src="./images/bside-fm-logo.png" alt="" aria-hidden="true">
-      <span class="fm-label">FM</span>
+      <img class="fm-logo" src="./images/fm.png" alt="" aria-hidden="true">
     </button>
     <div class="caption">
       <strong id="captionTitle">暖色</strong>
@@ -372,7 +850,11 @@
     <canvas id="detailCanvas"></canvas>
   </section>
   <div id="error" class="error">哎呀，出错了，请重启试试吧~</div>
+  <section id="fmOverlay" aria-label="B-SIDE FM">
+    <div id="fmContainer"></div>
+  </section>
   <script type="module" src="./js/main.js"></script>
+  <script type="module" src="./js/fm.js"></script>
   <script>(function() {
   const canvas = document.getElementById("bgNoise");
   const ctx = canvas.getContext("2d");

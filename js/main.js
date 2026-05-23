@@ -717,11 +717,25 @@ function setupEvents() {
   drawerGrid.addEventListener("mouseleave", () => updateCaption());
 }
 
+function emitBehavior(eventType, data) {
+  window.dispatchEvent(new CustomEvent("bside:behavior", {
+    detail: { type: eventType, ...data, timestamp: Date.now() }
+  }));
+}
+
 function openFmEntry() {
+  const summary = collections.map(c => ({
+    id: c.id,
+    title: c.title,
+    spine: c.spine,
+    count: c.photos.length,
+    criterion: c.criterion
+  }));
   window.dispatchEvent(new CustomEvent("bside:fm-open", {
     detail: {
       selectedCollection: collections[app.selectedIndex]?.id || null,
-      source: "hud-fm-button"
+      source: "hud-fm-button",
+      collections: summary
     }
   }));
 }
@@ -846,6 +860,7 @@ function presentCollection(index) {
   app.presentationTimer = 0;
   app.lastTickTime = 0;
   updateCaption();
+  emitBehavior("cd-open", { collectionId: collections[index]?.id, index });
 }
 
 function hidePresentation() {
@@ -884,6 +899,7 @@ function renderDrawer(index) {
   const collection = collections[index] || collections[0];
   if (!collection) return;
   app.drawerIndex = index;
+  emitBehavior("drawer-open", { collectionId: collection.id, photoCount: collection.photos.length });
   app.selectedPhotos.clear();
   drawerTitle.textContent = collection.title;
   drawerMeta.textContent = `${collection.photos.length} 张`;
