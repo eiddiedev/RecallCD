@@ -870,7 +870,7 @@ async function handleFiles(files, criterion = "palette") {
   const importedPhotos = [];
   for (const file of Array.from(files).slice(0, 40)) {
     try {
-      const image = await fileToImage(file);
+      const image = await fileToCanvasSource(file);
       const analysis = analyzePalette(image);
       const metadata = await parsePhotoMetadata(file);
       importedPhotos.unshift({
@@ -939,19 +939,49 @@ function rebuildCase(collection) {
   app.groups[index] = createCaseGroup(collection, index);
 }
 
-function fileToImage(file) {
-  if ("createImageBitmap" in globalThis) return createImageBitmap(file);
+async function fileToCanvasSource(file) {
+  const decoded = await decodeImageFile(file);
+  try {
+    return normalizeImageSource(decoded);
+  } finally {
+    if (decoded && typeof decoded.close === "function") decoded.close();
+  }
+}
+
+async function decodeImageFile(file) {
+  if ("createImageBitmap" in globalThis) {
+    try {
+      return await createImageBitmap(file, { imageOrientation: "from-image" });
+    } catch {
+      // Some WebViews can decode HEIC through <img> even when createImageBitmap cannot.
+    }
+  }
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.addEventListener("load", () => {
-      const image = new Image();
-      image.addEventListener("load", () => resolve(image));
-      image.addEventListener("error", reject);
-      image.src = reader.result;
-    });
-    reader.addEventListener("error", reject);
-    reader.readAsDataURL(file);
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+    image.addEventListener("load", () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    }, { once: true });
+    image.addEventListener("error", () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("image decode failed"));
+    }, { once: true });
+    image.src = url;
   });
+}
+
+function normalizeImageSource(source) {
+  const maxSide = 1800;
+  const sw = source.width || 1;
+  const sh = source.height || 1;
+  const scale = Math.min(1, maxSide / Math.max(sw, sh));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(sw * scale));
+  canvas.height = Math.max(1, Math.round(sh * scale));
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+  return canvas;
 }
 
 function drawCoverImage(ctx, source, x, y, w, h) {
