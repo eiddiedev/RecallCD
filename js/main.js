@@ -15,6 +15,8 @@ const photoDrawer = document.getElementById("photoDrawer");
 const drawerTitle = document.getElementById("drawerTitle");
 const drawerMeta = document.getElementById("drawerMeta");
 const drawerGrid = document.getElementById("drawerGrid");
+const vinylStage = document.getElementById("vinylStage");
+const vinylCtx = vinylStage.getContext("2d");
 
 const collections = [
   makeCollection("warm", "日光暖调", "SUN TAPE", "#c74731", "#1c0c08", "#fff0c8", ["暖色", "旅行", "胶片"]),
@@ -51,13 +53,56 @@ const app = {
   lastTickTime: 0
 };
 
+const VS_HIDDEN = "hidden";
+const VS_SLIDEUP = "slideUp";
+const VS_CAROUSEL = "carousel";
+
+const VINYL_SLIDEUP_MS = 600;
+const FAN_ANGLE_STEP = 0.22;
+
+const vinyl = {
+  phase: VS_HIDDEN,
+  timer: 0,
+  w: 0, h: 0,
+  cx: 0, cy: 0,
+  vinylR: 0,
+  ringR: 0,
+  vinylY: 0,
+  vinylTargetY: 0,
+  angle: 0,
+  velocity: 0,
+  dragPrevX: 0,
+  dragPrevAngle: 0,
+  dragging: false,
+  photos: [],
+  selectedIndex: 0,
+  snapTarget: null,
+  thumbs: [],
+  animating: false,
+  animFrame: 0,
+  collectionId: null,
+  palette: null
+};
+
+function setGroupOpacity(group, opacity) {
+  group.traverse(function (child) {
+    if (child.isMesh) {
+      var mats = Array.isArray(child.material) ? child.material : [child.material];
+      mats.forEach(function (m) {
+        m.transparent = true;
+        m.opacity = opacity;
+        m.needsUpdate = true;
+      });
+    }
+  });
+}
+
 function makeCollection(id, title, spine, primary, secondary, text, tags) {
   return { id, title, spine, palette: { primary, secondary, text }, tags, photos: [] };
 }
 
-const SCATTER_MS = 400;
-const ROTATE_BEFORE_DRAWER_MS = 2000;
-const ROTATION_RADS_PER_MS = (2 * Math.PI) / 5000;
+const SCATTER_MS = 700;
+const EXIT_ROTATION_SPEED = (2 * Math.PI) / 1400;
 
 function boot() {
   try {
@@ -323,15 +368,33 @@ function tick() {
     if (app.presentationPhase === "scattering") {
       app.presentationTimer += dtMs;
       if (app.presentationTimer >= SCATTER_MS) {
-        app.presentationPhase = "rotating";
-        app.presentationTimer = 0;
-        syncPresentationClass();
-      }
-    } else if (app.presentationPhase === "rotating") {
-      app.presentationTimer += dtMs;
-      if (app.presentationTimer >= ROTATE_BEFORE_DRAWER_MS) {
         app.presentationPhase = "presenting";
-        renderDrawer(app.selectedIndex);
+        initVinylStage();
+        const collection = collections[app.selectedIndex] || collections[0];
+        vinyl.photos = collection.photos.slice();
+        vinyl.selectedIndex = Math.round((collection.photos.length - 1) / 2);
+        vinyl.angle = -vinyl.selectedIndex * FAN_ANGLE_STEP;
+        vinyl.velocity = 0;
+        vinyl.snapTarget = null;
+        vinyl.thumbs = vinyl.photos.map(function(photo) {
+          var c = document.createElement("canvas");
+          var size = 120;
+          var sw = photo.source.width || 480;
+          var sh = photo.source.height || 640;
+          var ratio = sw / sh;
+          c.width = Math.round(size * ratio);
+          c.height = size;
+          var tctx = c.getContext("2d");
+          tctx.drawImage(photo.source, 0, 0, c.width, c.height);
+          return c;
+        });
+        vinyl.collectionId = collection.id;
+        vinyl.palette = collection.palette;
+        vinyl.phase = VS_SLIDEUP;
+        vinyl.timer = performance.now();
+        vinyl.vinylY = vinyl.h + vinyl.vinylR * 1.1;
+        vinyl.vinylTargetY = vinyl.cy;
+        startVinylLoop();
       }
     }
 
@@ -339,9 +402,7 @@ function tick() {
     app.spin += (app.spinTarget - app.spin) * 0.09;
     const portrait = innerHeight >= innerWidth;
 
-    const isAnimating = app.presentationPhase === "scattering"
-      || app.presentationPhase === "rotating"
-      || app.presentationPhase === "presenting";
+    const isAnimating = app.presentationPhase === "scattering" || app.presentationPhase === "presenting";
 
     app.groups.forEach((group, index) => {
       const delta = index - app.shelfPosition;
@@ -362,24 +423,20 @@ function tick() {
           const dist = Math.abs(spread);
           if (isFlipped) {
             targetX = 0;
-            targetY = 1.18;
-            targetZ = 2.18;
-            targetRotX = THREE.MathUtils.degToRad(-2);
+            targetY = -4.5;
+            targetZ = 1.2;
+            targetRotX = THREE.MathUtils.degToRad(8);
             targetRotZ = 0;
-            targetScale = 0.688;
-            if (app.presentationPhase === "rotating" || app.presentationPhase === "presenting") {
-              targetRotY = group.rotation.y + ROTATION_RADS_PER_MS * dtMs;
-            } else {
-              targetRotY = 0;
-            }
+            targetScale = 0.5;
+            targetRotY = group.rotation.y + EXIT_ROTATION_SPEED * dtMs;
           } else {
-            targetX = dir * (3.5 + dist * 2.0);
-            targetY = -dir * 0.8 - dist * 0.9;
-            targetZ = -2.0 - dist * 0.6;
+            targetX = 0;
+            targetRotY = 0;
+            targetY = -clamped * 0.64;
+            targetZ = 0.04 - Math.abs(clamped) * 0.025;
             targetRotX = THREE.MathUtils.degToRad(68);
-            targetRotY = dir * 0.45;
-            targetRotZ = dir * 0.3;
-            targetScale = 0.032;
+            targetRotZ = spiralPhase * focusFalloff;
+            targetScale = 0.76 - Math.min(Math.abs(clamped) * 0.02, 0.1);
           }
         } else if (app.flippedId) {
           const spread = index - flippedIndex;
@@ -421,7 +478,7 @@ function tick() {
 
       group.position.lerp(new THREE.Vector3(targetX, targetY, targetZ), 0.11);
 
-      if (isFlipped && (app.presentationPhase === "rotating" || app.presentationPhase === "presenting")) {
+      if (isFlipped && app.presentationPhase === "scattering") {
         group.rotation.y = targetRotY;
       } else {
         group.rotation.y += (targetRotY - group.rotation.y) * 0.11;
@@ -430,17 +487,29 @@ function tick() {
       group.rotation.z += (targetRotZ - group.rotation.z) * 0.11;
       const nextScale = group.scale.x + (targetScale - group.scale.x) * 0.11;
       group.scale.setScalar(nextScale);
-      group.visible = Math.abs(clamped) < (portrait ? 4.2 : 8) || isReceding || isFlipped;
+
+      if (isAnimating && app.flippedId && !isFlipped && app.presentationPhase === "scattering") {
+        var fadeT = Math.min(app.presentationTimer / SCATTER_MS, 1);
+        setGroupOpacity(group, 1 - fadeT);
+        group.userData._faded = true;
+        if (fadeT >= 0.98) group.visible = false;
+      } else if (group.userData._faded && app.presentationPhase !== "scattering") {
+        group.visible = false;
+      }
+
+      if (!isAnimating) {
+        if (group.userData._faded) {
+          setGroupOpacity(group, 1);
+          group.userData._faded = false;
+        }
+        group.visible = Math.abs(clamped) < (portrait ? 4.2 : 8) || isReceding || isFlipped;
+      } else if (!group.userData._faded) {
+        group.visible = Math.abs(clamped) < (portrait ? 4.2 : 8) || isReceding || isFlipped;
+      }
     });
 
     if (app.titlePlane) {
-      const showTitlePlane = Boolean(portrait && app.flippedId && (app.presentationPhase === "rotating" || app.presentationPhase === "presenting"));
-      app.titlePlane.visible = showTitlePlane;
-      if (showTitlePlane) {
-        app.titlePlane.position.lerp(new THREE.Vector3(0, 1.18, 1.44), 0.16);
-        app.titlePlane.rotation.set(0, 0, 0);
-        app.titlePlane.scale.setScalar(1);
-      }
+      app.titlePlane.visible = false;
     }
 
     app.renderer.render(app.scene, app.camera);
@@ -460,7 +529,7 @@ function resize() {
   app.camera.lookAt(0, 0, 0);
   app.camera.updateProjectionMatrix();
   syncPresentationClass();
-  drawDetail();
+  if (vinyl.phase !== VS_HIDDEN) resizeVinyl();
 }
 
 function setupEvents() {
@@ -470,13 +539,16 @@ function setupEvents() {
   sceneCanvas.addEventListener("pointerup", onPointerUp, { passive: true });
   sceneCanvas.addEventListener("pointercancel", () => { app.drag = null; }, { passive: true });
   sceneCanvas.addEventListener("wheel", onWheel, { passive: false });
+  vinylStage.addEventListener("pointerdown", onVinylPointerDown);
+  vinylStage.addEventListener("pointermove", onVinylPointerMove);
+  vinylStage.addEventListener("pointerup", onVinylPointerUp);
   importBtn.addEventListener("click", () => filePicker.click());
-  backBtn.addEventListener("click", () => closeDetail());
+  backBtn.addEventListener("click", () => { hidePresentation(); });
   filePicker.addEventListener("change", () => handleFiles(filePicker.files));
-  drawerGrid.addEventListener("click", onDrawerClick);
 }
 
 function onPointerDown(event) {
+  if (vinyl.phase !== VS_HIDDEN) return;
   if (app.presentationPhase !== "idle") return;
   app.drag = {
     x: event.clientX,
@@ -527,7 +599,7 @@ function onPointerUp(event) {
     presentCollection(app.selectedIndex);
     return;
   }
-  if (app.flippedId === collection.id) openDetail(app.selectedIndex);
+  if (app.flippedId === collection.id) return;
   else {
     app.flippedId = collection.id;
     hideDrawer();
@@ -567,7 +639,6 @@ function presentCollection(index) {
   app.selectedIndex = index;
   app.targetPosition = index;
   app.flippedId = collections[index].id;
-  app.drawerPhoto = 0;
   app.presentationPhase = "scattering";
   app.presentationTimer = 0;
   app.lastTickTime = 0;
@@ -575,11 +646,54 @@ function presentCollection(index) {
 }
 
 function hidePresentation() {
+  if (vinyl.phase !== VS_HIDDEN) {
+    vinyl.phase = VS_HIDDEN;
+    stopVinylLoop();
+    vinylStage.classList.remove("active");
+    document.body.classList.remove("presenting");
+  }
   app.flippedId = null;
   app.presentationPhase = "idle";
   app.presentationTimer = 0;
-  hideDrawer();
   updateCaption();
+}
+
+function renderDrawer(index) {
+  var collection = collections[index];
+  if (!collection) return;
+  drawerTitle.textContent = collection.title;
+  drawerMeta.textContent = collection.photos.length + " 张";
+  drawerGrid.innerHTML = "";
+  collection.photos.forEach(function(photo, i) {
+    var btn = document.createElement("button");
+    btn.className = "photo-thumb";
+    btn.setAttribute("type", "button");
+    btn.style.backgroundImage = "url(" + photoToThumb(photo) + ")";
+    var sw = photo.source.width || 480;
+    var sh = photo.source.height || 640;
+    btn.style.aspectRatio = (sw / sh).toFixed(4);
+    if (i === app.drawerPhoto) btn.classList.add("active");
+    var label = document.createElement("span");
+    label.textContent = photo.name;
+    btn.appendChild(label);
+    btn.addEventListener("click", (function(idx) {
+      return function() { onDrawerClick(index, idx); };
+    })(i));
+    drawerGrid.appendChild(btn);
+  });
+  photoDrawer.classList.add("open");
+}
+
+function hideDrawer() {
+  photoDrawer.classList.remove("open");
+}
+
+function onDrawerClick(collectionIdx, photoIdx) {
+  app.drawerPhoto = photoIdx;
+  app.detailCollection = collectionIdx;
+  app.detailPhoto = photoIdx;
+  var thumbs = drawerGrid.querySelectorAll(".photo-thumb");
+  thumbs.forEach(function(t, i) { t.classList.toggle("active", i === photoIdx); });
 }
 
 function syncPresentationClass() {
@@ -591,120 +705,333 @@ function syncPresentationClass() {
   updateTitlePlane(collection);
 }
 
-function renderDrawer(index) {
-  const collection = collections[index] || collections[0];
-  drawerTitle.textContent = collection.title;
-  drawerMeta.textContent = `${collection.photos.length} 张`;
-  drawerGrid.replaceChildren();
-  collection.photos.forEach((photo, photoIndex) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = `photo-thumb${photoIndex === app.drawerPhoto ? " active" : ""}`;
-    button.dataset.photoIndex = String(photoIndex);
-    button.style.backgroundImage = `url("${photoToThumb(photo)}")`;
-    const label = document.createElement("span");
-    label.textContent = `${photo.paletteLabel} · ${photo.sceneLabel}`;
-    button.append(label);
-    drawerGrid.append(button);
-  });
-  photoDrawer.classList.add("open");
+function initVinylStage() {
+  vinylStage.classList.add("active");
+  resizeVinyl();
 }
 
-function hideDrawer() {
-  photoDrawer.classList.remove("open");
-}
-
-function onDrawerClick(event) {
-  const button = event.target.closest(".photo-thumb");
-  if (!button) return;
-  app.drawerPhoto = Number(button.dataset.photoIndex || 0);
-  app.detailPhoto = app.drawerPhoto;
-  drawerGrid.querySelectorAll(".photo-thumb").forEach((item, index) => {
-    item.classList.toggle("active", index === app.drawerPhoto);
-  });
-}
-
-function openDetail(index) {
-  app.detailCollection = index;
-  app.detailPhoto = 0;
-  hideDrawer();
-  detail.classList.add("open");
-  drawDetail();
-}
-
-function closeDetail() {
-  detail.classList.remove("open");
-  app.flippedId = collections[app.detailCollection].id;
-  if (innerHeight >= innerWidth) renderDrawer(app.detailCollection);
-  updateCaption();
-}
-
-function drawDetail() {
-  if (!app.detailCtx || !detail.classList.contains("open")) return;
-  const ctx = app.detailCtx;
-  const dpr = Math.min(devicePixelRatio || 1, 2);
+function resizeVinyl() {
   const w = Math.max(320, innerWidth || 320);
   const h = Math.max(320, innerHeight || 640);
-  detailCanvas.width = w * dpr;
-  detailCanvas.height = h * dpr;
-  detailCanvas.style.width = `${w}px`;
-  detailCanvas.style.height = `${h}px`;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const collection = collections[app.detailCollection];
-  const photo = collection.photos[app.detailPhoto] || collection.photos[0];
-  const portrait = h >= w;
-  ctx.fillStyle = "#050505";
-  ctx.fillRect(0, 0, w, h);
-  if (!photo) return;
-  if (portrait) {
-    const panelH = Math.max(270, h * 0.38);
-    ctx.fillStyle = collection.palette.primary;
-    ctx.fillRect(0, 0, w, panelH);
-    ctx.fillStyle = "rgba(0,0,0,.14)";
-    for (let y = 30; y < panelH; y += 42) ctx.fillRect(0, y, w, 1);
-    text(ctx, "CHAPTER " + String(app.detailCollection + 1).padStart(2, "0") + " · CONTACT SHEET", 28, 52, 10, "rgba(20,10,8,.56)", 900);
-    text(ctx, collection.title, 28, 128, clamp(w * 0.16, 50, 76), "#120908", 900, "left", "Impact, Arial Black");
-    text(ctx, collection.tags.join(" · "), 30, 206, 18, "#fff0ba", 800, "left", "Georgia");
-    drawCoverImage(ctx, photo.source, 0, panelH, w, h - panelH - 104);
-    drawPhotoMeta(ctx, photo, 0, panelH, w, h - panelH - 104);
-    drawStrip(ctx, collection, 0, h - 104, w, 104);
-  } else {
-    const leftW = w * 0.42;
-    ctx.fillStyle = collection.palette.primary;
-    ctx.fillRect(0, 0, leftW, h);
-    text(ctx, "CHAPTER " + String(app.detailCollection + 1).padStart(2, "0"), 34, 76, 11, "rgba(20,10,8,.56)", 900);
-    text(ctx, collection.title, 34, 160, clamp(leftW * 0.18, 52, 90), "#120908", 900, "left", "Impact, Arial Black");
-    text(ctx, collection.tags.join(" · "), 38, 250, 18, "#fff0ba", 800, "left", "Georgia");
-    drawCoverImage(ctx, photo.source, leftW, 0, w - leftW, h);
-    drawPhotoMeta(ctx, photo, leftW, 0, w - leftW, h);
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  vinyl.w = w; vinyl.h = h;
+  vinylStage.width = w * dpr;
+  vinylStage.height = h * dpr;
+  vinylStage.style.width = w + "px";
+  vinylStage.style.height = h + "px";
+  vinylCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  vinyl.cx = w / 2;
+  vinyl.cy = h;
+  vinyl.vinylR = Math.min(w, h) * 0.44;
+  vinyl.ringR = vinyl.vinylR * 1.38;
+  vinyl.vinylTargetY = vinyl.cy;
+}
+
+function drawVinylDisc(ctx, cx, cy, r, angle, palette) {
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, r + 6, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(0,0,0,.28)"; ctx.fill();
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  const discGrad = ctx.createRadialGradient(cx - r * 0.05, cy - r * 0.03, 0, cx, cy, r);
+  discGrad.addColorStop(0, "#1a1816"); discGrad.addColorStop(0.88, "#0d0b0a"); discGrad.addColorStop(1, "#060505");
+  ctx.fillStyle = discGrad; ctx.fill();
+
+  for (let i = 1; i <= 5; i++) {
+    const gr = r * (0.58 + i * 0.075);
+    ctx.beginPath(); ctx.arc(cx, cy, gr, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(255,255,255," + (0.018 + i * 0.003) + ")";
+    ctx.lineWidth = 0.5; ctx.stroke();
+  }
+  ctx.beginPath(); ctx.arc(cx, cy, r * 0.94, 0, Math.PI * 2);
+  ctx.strokeStyle = "rgba(255,255,255,.05)"; ctx.lineWidth = 1; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, r * 0.86, 0, Math.PI * 2);
+  ctx.strokeStyle = "rgba(255,255,255,.06)"; ctx.lineWidth = 0.5; ctx.stroke();
+
+  const labelR = r * 0.3;
+  ctx.beginPath(); ctx.arc(cx, cy, labelR, 0, Math.PI * 2);
+  ctx.fillStyle = palette.primary; ctx.fill();
+  ctx.beginPath(); ctx.arc(cx, cy, labelR * 0.92, 0, Math.PI * 2);
+  ctx.fillStyle = palette.secondary; ctx.fill();
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, labelR * 0.92, 0, Math.PI * 2); ctx.clip();
+  ctx.fillStyle = palette.primary;
+  ctx.font = "800 " + (labelR * 0.38) + "px Impact, Arial Black, sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("RECALL", cx, cy - labelR * 0.16);
+  ctx.font = "700 " + (labelR * 0.24) + "px Arial, sans-serif";
+  ctx.fillStyle = palette.text;
+  ctx.fillText("CD · 2026", cx, cy + labelR * 0.28);
+  ctx.restore();
+
+  ctx.beginPath(); ctx.arc(cx, cy, r * 0.04, 0, Math.PI * 2);
+  ctx.fillStyle = "#020202"; ctx.fill();
+
+  const shine = ctx.createLinearGradient(cx - r, cy - r * 0.5, cx + r, cy + r * 0.5);
+  shine.addColorStop(0, "rgba(255,255,255,0)"); shine.addColorStop(0.45, "rgba(255,255,255,.04)");
+  shine.addColorStop(0.55, "rgba(255,255,255,.06)"); shine.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = shine; ctx.fill();
+
+  const angleLine = angle + Math.PI * 0.4;
+  ctx.beginPath();
+  ctx.moveTo(cx + Math.cos(angleLine) * labelR * 1.08, cy + Math.sin(angleLine) * labelR * 1.08);
+  ctx.lineTo(cx + Math.cos(angleLine) * r * 0.92, cy + Math.sin(angleLine) * r * 0.92);
+  ctx.strokeStyle = "rgba(255,255,255,.09)"; ctx.lineWidth = 1.2; ctx.stroke();
+  ctx.restore();
+}
+
+function drawVinylCarousel(ctx) {
+  const cx = vinyl.cx, cy = vinyl.vinylY, ringR = vinyl.ringR;
+  const photos = vinyl.photos;
+  const thumbs = vinyl.thumbs;
+  if (!photos.length) return;
+  const n = photos.length;
+  const topAngle = -Math.PI / 2;
+  const centerIdx = vinyl.selectedIndex;
+  const EMPHASIS_RANGE = 0.5;
+  const maxLift = ringR * 0.06;
+
+  // selection-zone glow arc on the ring at top
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, ringR, topAngle - 0.22, topAngle + 0.22);
+  ctx.strokeStyle = "rgba(255,255,255,0.25)";
+  ctx.lineWidth = 2.5;
+  ctx.shadowColor = "rgba(255,255,255,0.35)";
+  ctx.shadowBlur = 10;
+  ctx.stroke();
+  ctx.restore();
+
+  // downward triangle marker at selection point
+  var mkX = cx;
+  var mkY = cy - ringR - 6;
+  ctx.save();
+  ctx.fillStyle = "rgba(255,255,255,0.85)";
+  ctx.shadowColor = "rgba(255,255,255,0.55)";
+  ctx.shadowBlur = 8;
+  ctx.beginPath();
+  ctx.moveTo(mkX, mkY + 5);
+  ctx.lineTo(mkX - 6, mkY - 5);
+  ctx.lineTo(mkX + 6, mkY - 5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  for (var i = 0; i < n; i++) {
+    var a = topAngle + vinyl.angle + (i - centerIdx) * FAN_ANGLE_STEP;
+    var diff = a - topAngle;
+    if (Math.abs(diff) > Math.PI * 0.9) continue;
+
+    var dist = Math.abs(diff);
+    var p = Math.max(0, 1 - dist / EMPHASIS_RANGE);
+    var pSmooth = 0.5 - 0.5 * Math.cos(p * Math.PI);
+
+    var scale = 0.62 + (1.18 - 0.62) * pSmooth;
+    var alpha = 0.4 + 0.6 * pSmooth;
+    var liftY = -maxLift * pSmooth;
+    var borderAlpha = pSmooth;
+
+    var px = cx + Math.cos(a) * ringR;
+    var py = cy + Math.sin(a) * ringR + liftY;
+
+    var baseW = ringR * 0.22;
+    var thumbW = baseW * scale;
+    var thumbSrc = thumbs[i];
+    var thumbH;
+    if (thumbSrc) {
+      thumbH = thumbW / (thumbSrc.width / thumbSrc.height);
+    } else {
+      thumbH = thumbW / 0.75;
+    }
+
+    // outer glow near center
+    if (pSmooth > 0.05) {
+      ctx.save();
+      ctx.globalAlpha = pSmooth * 0.55;
+      ctx.shadowColor = "rgba(255,255,255,0.45)";
+      ctx.shadowBlur = 14;
+      ctx.beginPath();
+      roundRect(ctx, px - thumbW / 2, py - thumbH / 2, thumbW, thumbH, 5);
+      ctx.fillStyle = "rgba(255,255,255,0.06)";
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // thumbnail image
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    roundRect(ctx, px - thumbW / 2, py - thumbH / 2, thumbW, thumbH, 5);
+    ctx.clip();
+    if (thumbSrc) {
+      try { ctx.drawImage(thumbSrc, px - thumbW / 2, py - thumbH / 2, thumbW, thumbH); }
+      catch (_) { ctx.fillStyle = "#1a1714"; ctx.fillRect(px - thumbW / 2, py - thumbH / 2, thumbW, thumbH); }
+    } else {
+      ctx.fillStyle = "#1a1714";
+      ctx.fillRect(px - thumbW / 2, py - thumbH / 2, thumbW, thumbH);
+    }
+    ctx.restore();
+
+    // border - continuous opacity from proximity
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = "rgba(255,255,255," + (0.12 + 0.88 * borderAlpha).toFixed(2) + ")";
+    ctx.lineWidth = 0.5 + 2.7 * borderAlpha;
+    if (borderAlpha > 0.3) {
+      ctx.shadowColor = "rgba(255,255,255," + (0.55 * borderAlpha).toFixed(2) + ")";
+      ctx.shadowBlur = 10 * borderAlpha;
+    }
+    ctx.beginPath();
+    roundRect(ctx, px - thumbW / 2, py - thumbH / 2, thumbW, thumbH, 5);
+    ctx.stroke();
+    ctx.restore();
   }
 }
 
-function drawPhotoMeta(ctx, photo, x, y, w, h) {
-  const grd = ctx.createLinearGradient(x, y + h * 0.45, x, y + h);
-  grd.addColorStop(0, "rgba(0,0,0,0)");
-  grd.addColorStop(1, "rgba(0,0,0,.72)");
-  ctx.fillStyle = grd;
-  ctx.fillRect(x, y, w, h);
-  text(ctx, photo.name, x + 26, y + h - 68, 22, "#fff8ec", 900, "left", "Georgia");
-  text(ctx, `${photo.paletteLabel} · ${photo.sceneLabel}`, x + 26, y + h - 38, 12, "rgba(255,248,236,.72)", 800);
-  text(ctx, String(app.detailPhoto + 1).padStart(2, "0"), x + w - 24, y + h - 36, clamp(w * .12, 48, 86), "rgba(255,248,236,.92)", 900, "right", "Impact");
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
 }
 
-function drawStrip(ctx, collection, x, y, w, h) {
-  ctx.fillStyle = "#060505";
-  ctx.fillRect(x, y, w, h);
-  const size = 44;
-  collection.photos.slice(0, 8).forEach((photo, i) => {
-    const tx = 18 + i * 52;
-    drawCoverImage(ctx, photo.source, tx, y + 10, size, size);
-    ctx.strokeStyle = i === app.detailPhoto ? "#fff0b8" : "rgba(255,255,255,.24)";
-    ctx.lineWidth = i === app.detailPhoto ? 3 : 1;
-    ctx.strokeRect(tx, y + 10, size, size);
-  });
-  const photo = collection.photos[app.detailPhoto] || collection.photos[0];
-  text(ctx, photo.timeLabel, 18, y + h - 26, 11, "rgba(255,248,236,.64)", 800);
-  text(ctx, photo.locationLabel, w - 18, y + h - 26, 11, "rgba(255,248,236,.64)", 800, "right");
+function tickVinyl() {
+  if (vinyl.phase === VS_HIDDEN) { stopVinylLoop(); return; }
+  vinyl.animFrame = requestAnimationFrame(tickVinyl);
+  const ctx = vinylCtx;
+  const w = vinyl.w, h = vinyl.h;
+  const now = performance.now();
+
+  if (vinyl.phase === VS_SLIDEUP) {
+    const elapsed = now - vinyl.timer;
+    const t = Math.min(elapsed / VINYL_SLIDEUP_MS, 1);
+    const ease = 1 - Math.pow(1 - t, 3);
+    vinyl.vinylY = h + vinyl.vinylR * 1.1 - ease * (h + vinyl.vinylR * 1.1 - vinyl.vinylTargetY);
+    if (t >= 1) { enterCarousel(); }
+  } else if (vinyl.phase === VS_CAROUSEL) {
+    if (!vinyl.dragging && vinyl.snapTarget !== null) {
+      vinyl.angle += (vinyl.snapTarget - vinyl.angle) * 0.32;
+      vinyl.selectedIndex = clamp(Math.round(-vinyl.angle / FAN_ANGLE_STEP), 0, vinyl.photos.length - 1);
+      if (Math.abs(vinyl.snapTarget - vinyl.angle) < 0.0005) {
+        vinyl.angle = vinyl.snapTarget;
+        vinyl.snapTarget = null;
+      }
+    } else if (!vinyl.dragging && Math.abs(vinyl.velocity) > 0.0001) {
+      const n = vinyl.photos.length;
+      vinyl.angle += vinyl.velocity;
+      vinyl.velocity *= 0.94;
+      vinyl.angle = clamp(vinyl.angle, -(n - 1) * FAN_ANGLE_STEP, 0);
+      vinyl.selectedIndex = clamp(Math.round(-vinyl.angle / FAN_ANGLE_STEP), 0, n - 1);
+      if (Math.abs(vinyl.velocity) < 0.002) {
+        vinyl.velocity = 0;
+        snapCarousel();
+      }
+    }
+  }
+
+  ctx.clearRect(0, 0, w, h);
+
+  if (vinyl.phase === VS_CAROUSEL && vinyl.photos.length > 0) {
+    const photo = vinyl.photos[vinyl.selectedIndex];
+    if (photo) {
+      const topArea = vinyl.vinylY - vinyl.ringR * 1.25;
+      const maxW = w * 0.78;
+      const maxH = topArea * 0.82;
+      const sw = photo.source.width || 480;
+      const sh = photo.source.height || 640;
+      const ratio = sw / sh;
+      let dw, dh;
+      if (maxW / maxH > ratio) { dh = maxH; dw = dh * ratio; }
+      else { dw = maxW; dh = dw / ratio; }
+      const px = (w - dw) / 2;
+      const py = (topArea - dh) / 2;
+      ctx.save();
+      ctx.shadowColor = "rgba(0,0,0,0.5)";
+      ctx.shadowBlur = 20;
+      ctx.fillStyle = "#111";
+      ctx.fillRect(px, py, dw, dh);
+      ctx.shadowColor = "transparent";
+      ctx.drawImage(photo.source, px, py, dw, dh);
+      ctx.strokeStyle = "rgba(255,255,255,0.15)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(px, py, dw, dh);
+      ctx.restore();
+    }
+  }
+
+  if (vinyl.phase === VS_CAROUSEL) {
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(0, 0, w, 44);
+    ctx.fillStyle = "rgba(255,255,255,0.45)";
+    ctx.font = "600 12px Arial, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("← 点击此处返回货架", w / 2, 28);
+  }
+
+  drawVinylDisc(ctx, vinyl.cx, vinyl.vinylY, vinyl.vinylR, vinyl.angle, vinyl.palette || { primary: "#c74731", secondary: "#1c0c08", text: "#fff0c8" });
+  if (vinyl.phase === VS_CAROUSEL) {
+    drawVinylCarousel(ctx);
+  }
+}
+
+function startVinylLoop() {
+  if (!vinyl.animating) {
+    vinyl.animating = true;
+    tickVinyl();
+  }
+}
+
+function stopVinylLoop() {
+  vinyl.animating = false;
+  cancelAnimationFrame(vinyl.animFrame);
+}
+
+function enterCarousel() {
+  vinyl.phase = VS_CAROUSEL;
+  vinyl.velocity = 0;
+}
+
+function snapCarousel() {
+  const n = vinyl.photos.length;
+  let idx = Math.round(-vinyl.angle / FAN_ANGLE_STEP);
+  idx = clamp(idx, 0, n - 1);
+  vinyl.selectedIndex = idx;
+  vinyl.snapTarget = -idx * FAN_ANGLE_STEP;
+}
+
+function onVinylPointerDown(e) {
+  if (vinyl.phase !== VS_CAROUSEL) return;
+  if (e.clientY < vinyl.h * 0.12) { hidePresentation(); return; }
+  vinyl.dragging = true;
+  vinyl.velocity = 0;
+  vinyl.snapTarget = null;
+  vinyl.dragPrevX = e.clientX;
+  vinyl.dragPrevAngle = vinyl.angle;
+}
+
+function onVinylPointerMove(e) {
+  if (!vinyl.dragging) return;
+  const dx = e.clientX - vinyl.dragPrevX;
+  const n = vinyl.photos.length;
+  vinyl.angle = clamp(
+    vinyl.dragPrevAngle + dx / vinyl.ringR,
+    -(n - 1) * FAN_ANGLE_STEP,
+    0
+  );
+  vinyl.selectedIndex = clamp(Math.round(-vinyl.angle / FAN_ANGLE_STEP), 0, n - 1);
+}
+
+function onVinylPointerUp(e) {
+  if (!vinyl.dragging) return;
+  const dx = e.clientX - vinyl.dragPrevX;
+  vinyl.velocity = dx / vinyl.ringR * 0.12;
+  vinyl.dragging = false;
 }
 
 function seedSamples() {
