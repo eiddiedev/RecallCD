@@ -163,15 +163,27 @@ export function classifyPhoto(photo, criterion) {
 
 export function makeAdaptivePalette(hex) {
   const rgb = hexToRgb(hex || "#8a6a55");
-  const primary = rgbToHex(rgb.r, rgb.g, rgb.b);
+  const lifted = liftForDarkBackground(rgb);
+  const primary = rgbToHex(lifted.r, lifted.g, lifted.b);
   const secondary = rgbToHex(
-    Math.round(rgb.r * 0.22),
-    Math.round(rgb.g * 0.2),
-    Math.round(rgb.b * 0.2)
+    Math.round(lifted.r * 0.22),
+    Math.round(lifted.g * 0.2),
+    Math.round(lifted.b * 0.2)
   );
-  const lum = (rgb.r * .2126 + rgb.g * .7152 + rgb.b * .0722) / 255;
+  const lum = (lifted.r * .2126 + lifted.g * .7152 + lifted.b * .0722) / 255;
   const text = lum > .54 ? "#18120d" : "#fff1de";
   return { primary, secondary, text };
+}
+
+function liftForDarkBackground(rgb) {
+  const lum = (rgb.r * .2126 + rgb.g * .7152 + rgb.b * .0722) / 255;
+  if (lum >= .22) return rgb;
+  const amount = (.22 - lum) / .22 * 82;
+  return {
+    r: clamp(Math.round(rgb.r + amount), 0, 255),
+    g: clamp(Math.round(rgb.g + amount), 0, 255),
+    b: clamp(Math.round(rgb.b + amount), 0, 255)
+  };
 }
 
 export function makeManualGroup(title, criterion) {

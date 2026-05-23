@@ -9,6 +9,7 @@ import {
 } from "./classifier.js";
 
 const ERROR_TEXT = "哎呀，出错了，请重启试试吧~";
+const IMPORT_UNREADABLE_TEXT = "这批照片暂时无法读取，请转成 JPG/PNG 再试试";
 const sceneCanvas = document.getElementById("scene");
 const detail = document.getElementById("detail");
 const detailCanvas = document.getElementById("detailCanvas");
@@ -36,6 +37,7 @@ const moveCloseBtn = document.getElementById("moveCloseBtn");
 
 let collections = [];
 let allPhotos = [];
+let noticeTimer = 0;
 
 const app = {
   renderer: null,
@@ -865,16 +867,13 @@ function createSample(kind, variant) {
 
 async function handleFiles(files, criterion = "palette") {
   if (!files || !files.length) return;
-  if (!app.hasUserPhotos) {
-    allPhotos = allPhotos.filter((photo) => !photo.isSample);
-    app.hasUserPhotos = true;
-  }
+  const importedPhotos = [];
   for (const file of Array.from(files).slice(0, 40)) {
     try {
       const image = await fileToImage(file);
       const analysis = analyzePalette(image);
       const metadata = await parsePhotoMetadata(file);
-      allPhotos.unshift({
+      importedPhotos.unshift({
         id: `user-${Date.now()}-${Math.random()}`,
         isSample: false,
         name: cleanName(file.name),
@@ -898,10 +897,28 @@ async function handleFiles(files, criterion = "palette") {
   }
   closeImportModal();
   filePicker.value = "";
+  if (!importedPhotos.length) {
+    showNotice(IMPORT_UNREADABLE_TEXT);
+    return;
+  }
+  if (!app.hasUserPhotos) {
+    allPhotos = allPhotos.filter((photo) => !photo.isSample);
+    app.hasUserPhotos = true;
+  }
+  allPhotos.unshift(...importedPhotos);
   app.currentCriterion = criterion;
   regroupCollections(app.currentCriterion);
-  if (collections.length) presentCollection(clamp(app.selectedIndex, 0, collections.length - 1));
   updateCaption();
+}
+
+function showNotice(message) {
+  clearTimeout(noticeTimer);
+  error.textContent = message || ERROR_TEXT;
+  error.classList.add("show");
+  noticeTimer = setTimeout(() => {
+    error.classList.remove("show");
+    error.textContent = ERROR_TEXT;
+  }, 2600);
 }
 
 function rebuildCase(collection) {
