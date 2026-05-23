@@ -9,7 +9,7 @@ import {
 } from "./classifier.js";
 
 const ERROR_TEXT = "哎呀，出错了，请重启试试吧~";
-const IMPORT_UNREADABLE_TEXT = "这批照片暂时无法读取，请转成 JPG/PNG 再试试";
+const IMPORT_UNREADABLE_TEXT = "这批照片暂时无法读取，请换一张或转成 JPG/PNG 再试试";
 const sceneCanvas = document.getElementById("scene");
 const detail = document.getElementById("detail");
 const detailCanvas = document.getElementById("detailCanvas");
@@ -949,16 +949,35 @@ async function fileToCanvasSource(file) {
 }
 
 async function decodeImageFile(file) {
+  try {
+    return await decodeBrowserReadableBlob(file);
+  } catch {
+    const heicDecoder = getHeicDecoder();
+    if (isHeicFile(file) && heicDecoder) {
+      const converted = await heicDecoder({
+        blob: file,
+        toType: "image/png",
+        quality: 0.9,
+        multiple: false
+      });
+      const convertedBlob = Array.isArray(converted) ? converted[0] : converted;
+      return decodeBrowserReadableBlob(convertedBlob);
+    }
+    throw new Error("image decode failed");
+  }
+}
+
+async function decodeBrowserReadableBlob(blob) {
   if ("createImageBitmap" in globalThis) {
     try {
-      return await createImageBitmap(file, { imageOrientation: "from-image" });
+      return await createImageBitmap(blob, { imageOrientation: "from-image" });
     } catch {
-      // Some WebViews can decode HEIC through <img> even when createImageBitmap cannot.
+      // Some WebViews decode formats through <img> even when createImageBitmap cannot.
     }
   }
   return new Promise((resolve, reject) => {
     const image = new Image();
-    const url = URL.createObjectURL(file);
+    const url = URL.createObjectURL(blob);
     image.addEventListener("load", () => {
       URL.revokeObjectURL(url);
       resolve(image);
@@ -969,6 +988,18 @@ async function decodeImageFile(file) {
     }, { once: true });
     image.src = url;
   });
+}
+
+function isHeicFile(file) {
+  const type = String(file?.type || "").toLowerCase();
+  const name = String(file?.name || "").toLowerCase();
+  return type.includes("heic") || type.includes("heif") || /\.(heic|heif)$/.test(name);
+}
+
+function getHeicDecoder() {
+  if (typeof globalThis.heic2any === "function") return globalThis.heic2any;
+  if (globalThis.self && typeof globalThis.self.heic2any === "function") return globalThis.self.heic2any;
+  return null;
 }
 
 function normalizeImageSource(source) {
