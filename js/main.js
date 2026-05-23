@@ -162,7 +162,7 @@ function setupThree() {
   app.scene.add(rim);
 
   app.groups = collections.map((collection, index) => createCaseGroup(collection, index));
-  app.titlePlane = createTitlePlane(collections[0] || { title: "记忆CD" });
+  app.titlePlane = createTitlePlane(collections[0] || { title: "B-SIDE" });
   resize();
 }
 
@@ -1218,10 +1218,10 @@ function drawVinylDisc(ctx, cx, cy, r, angle, palette) {
   ctx.fillStyle = tintHex(palette.text, 0.96, 1);
   ctx.font = "800 " + (labelR * 0.34) + "px Impact, Arial Black, sans-serif";
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillText("RECALL", 0, -labelR * 0.16);
+  ctx.fillText("B-SIDE", 0, -labelR * 0.16);
   ctx.font = "700 " + (labelR * 0.24) + "px Arial, sans-serif";
   ctx.fillStyle = "rgba(255,248,232,.78)";
-  ctx.fillText("CD 2026", 0, labelR * 0.28);
+  ctx.fillText("MUSIC 2026", 0, labelR * 0.28);
   ctx.restore();
 
   ctx.beginPath(); ctx.arc(0, 0, r * 0.045, 0, Math.PI * 2);

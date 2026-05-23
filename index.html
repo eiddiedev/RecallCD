@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="description" content="记忆CD">
-  <title>记忆CD</title>
+  <meta name="description" content="B-SIDE">
+  <title>B-SIDE</title>
   <style>
     * { box-sizing: border-box; }
     html, body {
@@ -298,12 +298,12 @@
 <body>
   <img id="bgImage" src="./images/black-wallpaper.jpeg" alt="" aria-hidden="true">
   <canvas id="bgNoise" aria-hidden="true"></canvas>
-  <canvas id="scene" aria-label="3D 照片 CD 档案架"></canvas>
+  <canvas id="scene" aria-label="3D 音乐视频 CD 架"></canvas>
   <canvas id="vinylStage"></canvas>
   <div id="hud">
     <div class="brand">
-      <small>MEMORY DISC</small>
-      <h1>记忆CD</h1>
+      <small>MUSIC VIDEO COMPANION</small>
+      <h1>B-SIDE</h1>
       <p></p>
     </div>
     <div class="caption">
@@ -312,14 +312,14 @@
     </div>
   </div>
   <div id="albumTitleLayer" class="album-title-layer" aria-hidden="true"><strong>暖色</strong></div>
-  <section id="photoDrawer" class="photo-drawer" aria-label="照片集抽屉">
+  <section id="photoDrawer" class="photo-drawer" aria-label="内容抽屉">
     <div class="drawer-head">
       <strong id="drawerTitle">暖色</strong>
       <span id="drawerMeta">3 张</span>
     </div>
     <div id="drawerGrid" class="drawer-grid"></div>
   </section>
-  <section id="detail" aria-label="照片详情">
+  <section id="detail" aria-label="内容详情">
     <button id="backBtn" class="back-btn" type="button">返回</button>
     <canvas id="detailCanvas"></canvas>
   </section>
