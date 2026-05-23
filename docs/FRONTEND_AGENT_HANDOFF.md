@@ -54,7 +54,7 @@ Do not edit these areas unless the classification owner explicitly asks:
 - `formatDate`
 - Classification labels and routing logic.
 - EXIF/time/location parsing if added.
-- Any future `js/classifier.js`, `js/exif.js`, or similar classification modules.
+- `js/classifier.js` and any future `js/exif.js` or similar classification modules.
 
 ### Shared Contract
 

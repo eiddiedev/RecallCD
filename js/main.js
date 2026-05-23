@@ -1,4 +1,12 @@
 import * as THREE from "./three.module.min.js";
+import {
+  analyzePalette,
+  classifyPhoto,
+  getCriterionLabel,
+  makeAdaptivePalette,
+  makeManualGroup,
+  parsePhotoMetadata
+} from "./classifier.js";
 
 const ERROR_TEXT = "哎呀，出错了，请重启试试吧~";
 const sceneCanvas = document.getElementById("scene");
@@ -15,15 +23,19 @@ const photoDrawer = document.getElementById("photoDrawer");
 const drawerTitle = document.getElementById("drawerTitle");
 const drawerMeta = document.getElementById("drawerMeta");
 const drawerGrid = document.getElementById("drawerGrid");
+const importModal = document.getElementById("importModal");
+const criterionButtons = Array.from(document.querySelectorAll("[data-criterion]"));
+const chooseFilesBtn = document.getElementById("chooseFilesBtn");
+const cancelImportBtn = document.getElementById("cancelImportBtn");
+const movePanel = document.getElementById("movePanel");
+const moveTitle = document.getElementById("moveTitle");
+const moveChoices = document.getElementById("moveChoices");
+const moveCustomInput = document.getElementById("moveCustomInput");
+const moveCustomBtn = document.getElementById("moveCustomBtn");
+const moveCloseBtn = document.getElementById("moveCloseBtn");
 
-const collections = [
-  makeCollection("warm", "日光暖调", "SUN TAPE", "#c74731", "#1c0c08", "#fff0c8", ["暖色", "旅行", "胶片"]),
-  makeCollection("blue", "蓝色旅行", "BLUE SIDE", "#3e82a8", "#071423", "#e8f6ff", ["冷色", "天空", "远行"]),
-  makeCollection("green", "绿意户外", "GREEN WALK", "#568b47", "#07120a", "#efffdc", ["植物", "户外", "自然"]),
-  makeCollection("night", "夜色霓虹", "NIGHT LOG", "#5a4ab0", "#070615", "#f2eaff", ["暗调", "城市", "霓虹"]),
-  makeCollection("paper", "纸面截图", "PAPER CUT", "#d9d0ba", "#18130e", "#17120c", ["截图", "文档", "白底"]),
-  makeCollection("unknown", "未知记忆", "LOST MIX", "#9b6048", "#110b09", "#fff1de", ["混合", "未识别", "待命名"])
-];
+let collections = [];
+let allPhotos = [];
 
 const app = {
   renderer: null,
@@ -45,16 +57,20 @@ const app = {
   detailCollection: 0,
   detailPhoto: 0,
   drawerPhoto: 0,
+  currentCriterion: "palette",
+  pendingCriterion: "palette",
+  hasUserPhotos: false,
   detailCtx: detailCanvas.getContext("2d")
 };
 
-function makeCollection(id, title, spine, primary, secondary, text, tags) {
-  return { id, title, spine, palette: { primary, secondary, text }, tags, photos: [] };
+function makeCollection(id, title, spine, palette, tags, photos = [], criterion = "palette") {
+  return { id, title, spine, palette, tags, photos, criterion, cornerLabel: getCriterionLabel(criterion).toUpperCase() };
 }
 
 function boot() {
   try {
     seedSamples();
+    collections = buildCollections(app.currentCriterion);
     setupThree();
     setupEvents();
     updateCaption();
@@ -266,7 +282,7 @@ function makeTextTexture(collection, mode) {
   c.globalAlpha = 0.72;
   c.font = "800 32px Arial, sans-serif";
   c.textAlign = "right";
-  c.fillText("2026", canvas.height / 2 - 52, 0, 150);
+  c.fillText(collection.cornerLabel || "CD", canvas.height / 2 - 52, 0, 190);
   c.globalAlpha = 1;
   c.restore();
 
@@ -297,7 +313,7 @@ function makeFrontSpineTexture(collection) {
   c.fillText(collection.spine, canvas.width / 2, canvas.height / 2 + 4, canvas.width - 160);
   c.fillStyle = "rgba(255,255,255,.58)";
   c.font = "800 28px Arial, sans-serif";
-  c.fillText("2026", 82, canvas.height / 2 + 4, 110);
+  c.fillText(collection.cornerLabel || "CD", 92, canvas.height / 2 + 4, 150);
   c.fillText(collection.title, canvas.width - 130, canvas.height / 2 + 4, 220);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -406,10 +422,30 @@ function setupEvents() {
   sceneCanvas.addEventListener("pointerup", onPointerUp, { passive: true });
   sceneCanvas.addEventListener("pointercancel", () => { app.drag = null; }, { passive: true });
   sceneCanvas.addEventListener("wheel", onWheel, { passive: false });
-  importBtn.addEventListener("click", () => filePicker.click());
+  importBtn.addEventListener("click", () => openImportModal());
+  chooseFilesBtn.addEventListener("click", () => filePicker.click());
+  cancelImportBtn.addEventListener("click", () => closeImportModal());
+  criterionButtons.forEach((button) => button.addEventListener("click", () => selectImportCriterion(button.dataset.criterion)));
   backBtn.addEventListener("click", () => closeDetail());
-  filePicker.addEventListener("change", () => handleFiles(filePicker.files));
+  filePicker.addEventListener("change", () => handleFiles(filePicker.files, app.pendingCriterion));
   drawerGrid.addEventListener("click", onDrawerClick);
+  moveCustomBtn.addEventListener("click", moveToCustomGroup);
+  moveCloseBtn.addEventListener("click", hideMovePanel);
+}
+
+function openImportModal() {
+  app.pendingCriterion = app.currentCriterion || "palette";
+  selectImportCriterion(app.pendingCriterion);
+  importModal.classList.add("open");
+}
+
+function closeImportModal() {
+  importModal.classList.remove("open");
+}
+
+function selectImportCriterion(criterion) {
+  app.pendingCriterion = ["palette", "location", "time"].includes(criterion) ? criterion : "palette";
+  criterionButtons.forEach((button) => button.classList.toggle("active", button.dataset.criterion === app.pendingCriterion));
 }
 
 function onPointerDown(event) {
@@ -493,8 +529,9 @@ function pickGroup(x, y) {
 
 function updateCaption() {
   const c = collections[app.selectedIndex] || collections[0];
+  if (!c) return;
   captionTitle.textContent = c.title;
-  captionMeta.textContent = `${c.photos.length} 张 · ${c.tags.join(" / ")}`;
+  captionMeta.textContent = `${c.photos.length} 张 · ${getCriterionLabel(app.currentCriterion)} · ${c.tags.join(" / ")}`;
   syncPresentationClass();
 }
 
@@ -510,6 +547,7 @@ function presentCollection(index) {
 function hidePresentation() {
   app.flippedId = null;
   hideDrawer();
+  hideMovePanel();
   updateCaption();
 }
 
@@ -523,6 +561,7 @@ function syncPresentationClass() {
 
 function renderDrawer(index) {
   const collection = collections[index] || collections[0];
+  if (!collection) return;
   drawerTitle.textContent = collection.title;
   drawerMeta.textContent = `${collection.photos.length} 张`;
   drawerGrid.replaceChildren();
@@ -533,15 +572,23 @@ function renderDrawer(index) {
     button.dataset.photoIndex = String(photoIndex);
     button.style.backgroundImage = `url("${photoToThumb(photo)}")`;
     const label = document.createElement("span");
-    label.textContent = `${photo.paletteLabel} · ${photo.sceneLabel}`;
+    label.textContent = getPhotoDrawerLabel(photo);
     button.append(label);
     drawerGrid.append(button);
   });
   photoDrawer.classList.add("open");
 }
 
+function getPhotoDrawerLabel(photo) {
+  if (!photo) return "";
+  if (app.currentCriterion === "location") return `${photo.locationLabel || "未知地点"} · ${photo.paletteLabel}`;
+  if (app.currentCriterion === "time") return `${photo.timeLabel || "未知时间"} · ${photo.paletteLabel}`;
+  return `${photo.paletteLabel} · ${photo.sceneLabel}`;
+}
+
 function hideDrawer() {
   photoDrawer.classList.remove("open");
+  hideMovePanel();
 }
 
 function onDrawerClick(event) {
@@ -552,6 +599,49 @@ function onDrawerClick(event) {
   drawerGrid.querySelectorAll(".photo-thumb").forEach((item, index) => {
     item.classList.toggle("active", index === app.drawerPhoto);
   });
+  showMovePanel((collections[app.selectedIndex] || collections[0])?.photos[app.drawerPhoto]);
+}
+
+function showMovePanel(photo) {
+  if (!photo) return;
+  movePanel.dataset.photoId = photo.id;
+  moveTitle.textContent = `移动：${photo.name}`;
+  moveChoices.replaceChildren();
+  collections.forEach((collection) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = collection.title;
+    button.dataset.collectionId = collection.id;
+    button.className = collection.photos.some((item) => item.id === photo.id) ? "active" : "";
+    button.addEventListener("click", () => movePhotoToGroup(photo.id, {
+      key: collection.id,
+      title: collection.title,
+      spine: collection.spine
+    }));
+    moveChoices.append(button);
+  });
+  moveCustomInput.value = "";
+  movePanel.classList.add("open");
+}
+
+function hideMovePanel() {
+  movePanel.classList.remove("open");
+  movePanel.dataset.photoId = "";
+}
+
+function movePhotoToGroup(photoId, group) {
+  const photo = allPhotos.find((item) => item.id === photoId);
+  if (!photo) return;
+  photo.manualGroupByCriterion ||= {};
+  photo.manualGroupByCriterion[app.currentCriterion] = group;
+  hideMovePanel();
+  regroupCollections(app.currentCriterion, group.key);
+}
+
+function moveToCustomGroup() {
+  const photoId = movePanel.dataset.photoId;
+  const group = makeManualGroup(moveCustomInput.value, app.currentCriterion);
+  movePhotoToGroup(photoId, group);
 }
 
 function openDetail(index) {
@@ -567,6 +657,60 @@ function closeDetail() {
   app.flippedId = collections[app.detailCollection].id;
   if (innerHeight >= innerWidth) renderDrawer(app.detailCollection);
   updateCaption();
+}
+
+function buildCollections(criterion) {
+  const groups = new Map();
+  allPhotos.forEach((photo) => {
+    const groupInfo = classifyPhoto(photo, criterion);
+    if (!groups.has(groupInfo.key)) {
+      groups.set(groupInfo.key, {
+        info: groupInfo,
+        photos: []
+      });
+    }
+    groups.get(groupInfo.key).photos.push(photo);
+  });
+
+  return Array.from(groups.values())
+    .sort((a, b) => String(a.info.sortValue).localeCompare(String(b.info.sortValue), "zh-Hans-CN"))
+    .map(({ info, photos }) => {
+      const firstColor = photos[0]?.dominantColor || "#8a6a55";
+      return makeCollection(info.key, info.title, info.spine, makeAdaptivePalette(firstColor), info.tags, photos, criterion);
+    });
+}
+
+function regroupCollections(criterion, preferredCollectionId = null) {
+  const previousId = preferredCollectionId || collections[app.selectedIndex]?.id;
+  disposeCaseGroups();
+  collections = buildCollections(criterion);
+  app.groups = collections.map((collection, index) => createCaseGroup(collection, index));
+  const nextIndex = Math.max(0, collections.findIndex((collection) => collection.id === previousId));
+  app.selectedIndex = clamp(nextIndex, 0, Math.max(collections.length - 1, 0));
+  app.targetPosition = app.selectedIndex;
+  app.shelfPosition = app.selectedIndex;
+  app.flippedId = collections[app.selectedIndex]?.id || null;
+  app.drawerPhoto = 0;
+  app.detailPhoto = 0;
+  if (app.flippedId && innerHeight >= innerWidth) renderDrawer(app.selectedIndex);
+  else hideDrawer();
+  updateCaption();
+}
+
+function disposeCaseGroups() {
+  app.groups.forEach((group) => {
+    app.scene.remove(group);
+    group.traverse((child) => {
+      if (!child.isMesh) return;
+      child.geometry?.dispose();
+      const mats = Array.isArray(child.material) ? child.material : [child.material];
+      mats.forEach((material) => {
+        material.map?.dispose();
+        material.dispose?.();
+      });
+    });
+  });
+  app.groups = [];
 }
 
 function drawDetail() {
@@ -638,18 +782,26 @@ function drawStrip(ctx, collection, x, y, w, h) {
 }
 
 function seedSamples() {
-  collections.forEach((collection) => {
+  ["warm", "blue", "green", "night", "paper", "unknown"].forEach((kind) => {
     for (let i = 0; i < 3; i += 1) {
-      const source = createSample(collection.id, i);
-      const analysis = analyzeSource(source);
-      collection.photos.push({
-        id: `${collection.id}-${i}`,
-        name: `${collection.title.replace(/..$/, "")} ${String(i + 1).padStart(2, "0")}`,
+      const source = createSample(kind, i);
+      const analysis = analyzePalette(source);
+      allPhotos.push({
+        id: `sample-${kind}-${i}`,
+        isSample: true,
+        name: `${analysis.paletteLabel.replace(/..$/, "")} ${String(i + 1).padStart(2, "0")}`,
         source,
+        paletteKey: analysis.collectionId,
         paletteLabel: analysis.paletteLabel,
         sceneLabel: analysis.sceneLabel,
+        dominantColor: analysis.dominantColor,
         timeLabel: "样例时间",
-        locationLabel: "无可读地点"
+        timeKey: "sample-time",
+        timeSource: "sample",
+        locationLabel: "未知地点",
+        locationKey: "unknown-location",
+        locationSource: "sample",
+        manualGroupByCriterion: {}
       });
     }
   });
@@ -711,58 +863,50 @@ function createSample(kind, variant) {
   return canvas;
 }
 
-function analyzeSource(source) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 64;
-  canvas.height = 64;
-  const c = canvas.getContext("2d", { willReadFrequently: true });
-  c.drawImage(source, 0, 0, 64, 64);
-  const data = c.getImageData(0, 0, 64, 64).data;
-  let r = 0, g = 0, b = 0, n = 0, dark = 0, white = 0, green = 0, blue = 0;
-  for (let i = 0; i < data.length; i += 16) {
-    r += data[i]; g += data[i + 1]; b += data[i + 2]; n += 1;
-    const lum = (data[i] * .2126 + data[i + 1] * .7152 + data[i + 2] * .0722) / 255;
-    if (lum < .22) dark += 1;
-    if (lum > .82) white += 1;
-    if (data[i + 1] > data[i] * 1.1 && data[i + 1] > data[i + 2] * 1.05) green += 1;
-    if (data[i + 2] > data[i] * 1.1 && data[i + 2] > data[i + 1] * .9) blue += 1;
-  }
-  r /= n; g /= n; b /= n;
-  if (white / n > .45) return { paletteLabel: "纸面低饱和", sceneLabel: "截图/文档", collectionId: "paper" };
-  if (dark / n > .44) return { paletteLabel: "暗调霓虹", sceneLabel: "夜景/室内", collectionId: "night" };
-  if (green / n > .24) return { paletteLabel: "绿色自然", sceneLabel: "户外/植物", collectionId: "green" };
-  if (blue / n > .24) return { paletteLabel: "蓝色冷调", sceneLabel: "天空/旅行", collectionId: "blue" };
-  if (r > b && r > g * .82) return { paletteLabel: "暖色胶片", sceneLabel: "日光/人像", collectionId: "warm" };
-  return { paletteLabel: "混合色系", sceneLabel: "未知记忆", collectionId: "unknown" };
-}
-
-async function handleFiles(files) {
+async function handleFiles(files, criterion = "palette") {
   if (!files || !files.length) return;
+  if (!app.hasUserPhotos) {
+    allPhotos = allPhotos.filter((photo) => !photo.isSample);
+    app.hasUserPhotos = true;
+  }
   for (const file of Array.from(files).slice(0, 40)) {
     try {
       const image = await fileToImage(file);
-      const analysis = analyzeSource(image);
-      const target = collections.find((c) => c.id === analysis.collectionId) || collections[5];
-      target.photos.unshift({
+      const analysis = analyzePalette(image);
+      const metadata = await parsePhotoMetadata(file);
+      allPhotos.unshift({
         id: `user-${Date.now()}-${Math.random()}`,
+        isSample: false,
         name: cleanName(file.name),
         source: image,
+        paletteKey: analysis.collectionId,
         paletteLabel: analysis.paletteLabel,
         sceneLabel: analysis.sceneLabel,
-        timeLabel: file.lastModified ? `文件 ${formatDate(file.lastModified)}` : "未知时间",
-        locationLabel: "无可读地点"
+        dominantColor: analysis.dominantColor,
+        timeLabel: metadata.timeLabel,
+        timeKey: metadata.timeKey,
+        timeSource: metadata.timeSource,
+        locationLabel: metadata.locationLabel,
+        locationKey: metadata.locationKey,
+        locationSource: metadata.locationSource,
+        gps: metadata.gps,
+        manualGroupByCriterion: {}
       });
-      rebuildCase(target);
     } catch {
       continue;
     }
   }
-  if (app.flippedId && innerHeight >= innerWidth) renderDrawer(app.selectedIndex);
+  closeImportModal();
+  filePicker.value = "";
+  app.currentCriterion = criterion;
+  regroupCollections(app.currentCriterion);
+  if (collections.length) presentCollection(clamp(app.selectedIndex, 0, collections.length - 1));
   updateCaption();
 }
 
 function rebuildCase(collection) {
   const index = collections.findIndex((c) => c.id === collection.id);
+  if (index < 0 || !app.groups[index]) return;
   const old = app.groups[index];
   app.scene.remove(old);
   old.traverse((child) => {
@@ -825,11 +969,6 @@ function text(ctx, value, x, y, size, color, weight = 400, align = "left", famil
 
 function cleanName(name) {
   return (name || "未命名照片").replace(/\.[^.]+$/, "").slice(0, 24);
-}
-
-function formatDate(ms) {
-  const d = new Date(ms);
-  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function clamp(value, min, max) {
