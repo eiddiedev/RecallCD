@@ -125,9 +125,240 @@ function makeCollection(id, title, spine, palette, photos = [], criterion = "pal
 const SCATTER_MS = 700;
 const EXIT_ROTATION_SPEED = (2 * Math.PI) / 1400;
 
+function createGenreCover(palette) {
+  var canvas = document.createElement("canvas");
+  canvas.width = 480;
+  canvas.height = 640;
+  var ctx = canvas.getContext("2d");
+  var pr = parseInt(palette.primary.slice(1, 3), 16);
+  var pg = parseInt(palette.primary.slice(3, 5), 16);
+  var pb = parseInt(palette.primary.slice(5, 7), 16);
+  var sr = parseInt(palette.secondary.slice(1, 3), 16);
+  var sg = parseInt(palette.secondary.slice(3, 5), 16);
+  var sb = parseInt(palette.secondary.slice(5, 7), 16);
+
+  var bgGrad = ctx.createLinearGradient(0, 0, 480, 640);
+  bgGrad.addColorStop(0, "rgb(" + Math.round(pr * 0.22) + "," + Math.round(pg * 0.22) + "," + Math.round(pb * 0.22) + ")");
+  bgGrad.addColorStop(0.4, "rgb(" + Math.round(pr * 0.12) + "," + Math.round(pg * 0.12) + "," + Math.round(pb * 0.12) + ")");
+  bgGrad.addColorStop(1, "#020202");
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, 480, 640);
+
+  ctx.save();
+  ctx.globalAlpha = 0.28;
+  var ringGrad = ctx.createRadialGradient(240, 270, 50, 240, 270, 230);
+  ringGrad.addColorStop(0, palette.primary);
+  ringGrad.addColorStop(0.45, palette.secondary);
+  ringGrad.addColorStop(1, "transparent");
+  ctx.fillStyle = ringGrad;
+  ctx.fillRect(0, 0, 480, 640);
+  ctx.restore();
+
+  ctx.save();
+  ctx.globalAlpha = 0.12;
+  for (var i = 0; i < 8; i++) {
+    var y = 100 + i * 64;
+    ctx.fillStyle = i % 3 === 0 ? palette.primary : (i % 3 === 1 ? palette.secondary : "rgba(255,255,255,0.06)");
+    ctx.fillRect(40, y, 400, 1);
+  }
+  ctx.restore();
+
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+  var spotGrad = ctx.createRadialGradient(240, 220, 0, 240, 220, 200);
+  spotGrad.addColorStop(0, palette.secondary);
+  spotGrad.addColorStop(1, "transparent");
+  ctx.fillStyle = spotGrad;
+  ctx.fillRect(0, 0, 480, 640);
+  ctx.restore();
+
+  ctx.fillStyle = "rgba(0,0,0,0.3)";
+  ctx.fillRect(0, 0, 480, 640);
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = palette.text;
+  ctx.shadowColor = palette.primary;
+  ctx.shadowBlur = 28;
+  ctx.font = "900 52px Impact, 'Arial Black', sans-serif";
+  var displayName = palette.name.length > 8 ? palette.name.slice(0, 8) + "…" : palette.name;
+  ctx.fillText(displayName, 240, 290, 400);
+
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = palette.text === "#222222" ? "rgba(34,34,34,0.5)" : "rgba(255,248,235,0.5)";
+  ctx.font = "600 14px Arial, sans-serif";
+  ctx.fillText("B-SIDE MUSIC VIDEO", 240, 360);
+
+  return canvas;
+}
+
+function createVideoCover(vs, g) {
+  var canvas = document.createElement("canvas");
+  canvas.width = 480;
+  canvas.height = 640;
+  var ctx = canvas.getContext("2d");
+
+  ctx.fillStyle = "#080808";
+  ctx.fillRect(0, 0, 480, 640);
+
+  var glow = ctx.createRadialGradient(240, 200, 30, 240, 360, 340);
+  glow.addColorStop(0, g.primary);
+  glow.addColorStop(1, "transparent");
+  ctx.globalAlpha = 0.2;
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, 480, 640);
+  ctx.globalAlpha = 1;
+
+  ctx.strokeStyle = g.primary;
+  ctx.globalAlpha = 0.5;
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(28, 28); ctx.lineTo(452, 28); ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  ctx.fillStyle = "#fff7ea";
+  ctx.font = "900 28px Arial, 'PingFang SC', sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillText(truncateText(vs.author, 15), 28, 46);
+
+  ctx.fillStyle = "rgba(255,247,234,.68)";
+  ctx.font = "600 16px Arial, 'PingFang SC', sans-serif";
+  var lines = wrapText(ctx, truncateText(vs.title, 60), 420);
+  for (var li = 0; li < Math.min(lines.length, 3); li++) {
+    ctx.fillText(lines[li], 28, 84 + li * 22);
+  }
+
+  if (vs.music) {
+    ctx.fillStyle = "rgba(255,247,234,.38)";
+    ctx.font = "600 12px Arial, 'PingFang SC', sans-serif";
+    ctx.fillText(truncateText(vs.music, 42), 28, 156);
+  }
+
+  ctx.fillStyle = "rgba(255,255,255,.88)";
+  ctx.beginPath(); ctx.arc(240, 310, 42, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#0a0a0a";
+  ctx.beginPath();
+  ctx.moveTo(226, 288); ctx.lineTo(226, 332); ctx.lineTo(260, 310); ctx.closePath();
+  ctx.fill();
+
+  var tagsX = 28;
+  (vs.tags || []).slice(0, 4).forEach(function(tag) {
+    var tw = ctx.measureText(tag).width + 20;
+    ctx.fillStyle = "rgba(255,255,255,.12)";
+    roundRect(ctx, tagsX, 580, tw, 24, 4);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,247,234,.82)";
+    ctx.font = "700 11px Arial, 'PingFang SC', sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "bottom";
+    ctx.fillText(tag, tagsX + 10, 596);
+    tagsX += tw + 8;
+  });
+
+  ctx.textAlign = "right";
+  ctx.fillStyle = "rgba(255,247,234,.62)";
+  ctx.font = "700 11px Arial, sans-serif";
+  var engagement = [vs.likes + " 赞", vs.comments + " 评", vs.favorites + " 藏"];
+  for (var ei = 0; ei < engagement.length; ei++) {
+    ctx.fillText(engagement[ei], 452, 574 + ei * 18);
+  }
+
+  return canvas;
+}
+
+function wrapText(ctx, text, maxWidth) {
+  var words = text.split("");
+  var lines = [];
+  var current = "";
+  for (var i = 0; i < words.length; i++) {
+    var test = current + words[i];
+    if (ctx.measureText(test).width > maxWidth && current.length > 0) {
+      lines.push(current);
+      current = words[i];
+    } else {
+      current = test;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+function seedSamples() {
+  var genres = {
+    jazz: { title: "Jazz", spine: "JAZZ TAPE", primary: "#e8542a", secondary: "#f0a070", text: "#ffffff" },
+    hiphop: { title: "Hip-Hop", spine: "HIPHOP TAPE", primary: "#4a9fd4", secondary: "#a8d8f0", text: "#ffffff" },
+    rnb: { title: "R&B", spine: "R&B TAPE", primary: "#888888", secondary: "#cccccc", text: "#222222" },
+    electronic: { title: "Electronic", spine: "ELEC TAPE", primary: "#4a2080", secondary: "#8844cc", text: "#ffffff" },
+    folk: { title: "Folk", spine: "FOLK TAPE", primary: "#8b6f47", secondary: "#c4a882", text: "#ffffff" },
+    cinematic: { title: "Cinematic", spine: "CINE TAPE", primary: "#2d5a27", secondary: "#5a8c4e", text: "#ffffff" }
+  };
+
+  var videoSeeds = [
+    { genre: "jazz", file: "jazz1.mp4", author: "@听爵士看世界", title: "第134集：永恒的经典\"Misty\" Kyra's Misty cover with Dom and Julian", tags: ["#爵士即兴", "#jazz", "#misty"], music: "汽水音乐: Misty", likes: "2.6万", comments: "264", favorites: "4990", shares: "6805" },
+    { genre: "jazz", file: "jazz2.mp4", author: "@AIER极致音乐", title: "之前一直对爵士有偏见，直到我看完这个表演，节奏真的叹为观止", tags: ["#音乐推荐", "#音乐现场", "#爵士乐"], music: "汽水音乐: Jazz Festival", likes: "3.3万", comments: "981", favorites: "8881", shares: "6768" },
+    { genre: "jazz", file: "jazz3.mp4", author: "@夜在指尖", title: "保持干净，就是流行爵士即兴中需要的方式", tags: ["#原创音乐", "#钢琴", "#jazz"], music: "汽水音乐: 泛红-承志piano", likes: "25.1万", comments: "2223", favorites: "3.9万", shares: "3.6万" },
+
+    { genre: "hiphop", file: "hiphop1.mp4", author: "@ANR4N", title: "第5集：视频十秒后会出现雷暴 哪首歌是你最喜欢的夏日HIPHOP音乐呢？", tags: ["#hiphopdj", "#inmyfeelings", "#july", "#留学生"], music: "汽水音乐: Late Night Tales: Zero 7", likes: "32.9万", comments: "5293", favorites: "6.5万", shares: "6.0万" },
+    { genre: "hiphop", file: "hiphop2.mp4", author: "@方大炮", title: "整个夏天 想和你环游世界", tags: ["#rnb", "#夏天又杀回来了"], music: "汽水音乐: 夏天(Live)", likes: "8.0万", comments: "704", favorites: "6470", shares: "1.2万" },
+    { genre: "hiphop", file: "hiphop3.mp4", author: "@oogsehun", title: "oldschool hiphop编舞", tags: ["#hiphop", "#原创编舞", "#oldschool", "#简单易学"], music: "汽水音乐: Late Night Tales: Zero 7 – Continuous Mix", likes: "9543", comments: "93", favorites: "2333", shares: "1796" },
+
+    { genre: "rnb", file: "r&b.mp4", author: "@从天而降的屎壳郎", title: "如果你听腻了流水线的快餐音乐，来听听格莱美认证的\"最佳R&B歌手\"如何用声音讲故事的@Muni_Long", tags: ["#munilong", "#hrshrs", "#mb", "#音乐分享", "#神级现场"], music: "汽水音乐: Hrs&Hrs(cover)", likes: "5.9万", comments: "527", favorites: "7173", shares: "1.2万" },
+    { genre: "rnb", file: "r&b2.mp4", author: "@方大炮", title: "整个夏天 想和你环游世界", tags: ["#rnb", "#夏天又杀回来了"], music: "汽水音乐: 夏天(Live)", likes: "8.0万", comments: "704", favorites: "6470", shares: "1.2万" },
+    { genre: "rnb", file: "r&b3.mp4", author: "@马杰雪", title: "我的rnb白月光", tags: ["#fallinout", "#keyshiacole", "#rnb", "#翻唱"], music: "汽水音乐: Fallin' Out", likes: "9290", comments: "146", favorites: "787", shares: "365" },
+
+    { genre: "electronic", file: "Electronic1.mp4", author: "@品尝音乐", title: "第24集：【电子舞曲/Electronic】Sacred Melody（神圣的旋律）", tags: ["#戴上耳机", "#电子音乐", "#纯音乐", "#electronic"], music: "汽水音乐: Sacred Melody", likes: "13", comments: "0", favorites: "6", shares: "2" },
+    { genre: "electronic", file: "Electronic2.mp4", author: "@小艺笑", title: "歌曲：electronic vibes 歌手：G Sounds", tags: ["#音乐分享", "#音乐推荐"], music: "汽水音乐: Electronic Vibes", likes: "286", comments: "11", favorites: "186", shares: "502" },
+    { genre: "electronic", file: "Electronic3.mp4", author: "@_江甲", title: "第10集：感受绚烂霓虹之下的腐臭味，都市之大，没有一束光是给自己的", tags: ["#电音", "#synthwave", "#赛博朋克"], music: "汽水音乐: Time To Pretend", likes: "1.4万", comments: "510", favorites: "6510", shares: "1257" },
+
+    { genre: "folk", file: "Folk1.mp4", author: "@乐棱镜·Musikorama", title: "第34集：Folk界最难被复制的声音，或许没有之一 Big Thief – Double Infinity(2025)", tags: ["#欧美音乐", "#民谣", "#pitchfork"], music: "汽水音乐: Double Infinity", likes: "73", comments: "3", favorites: "5", shares: "7" },
+
+    { genre: "cinematic", file: "Cinematic1.mp4", author: "@Aiden-Echo", title: "\"是AI也是爱\" 电影her混剪", tags: ["#her", "#电影美学", "#电影感"], music: "汽水音乐: I Love You So", likes: "19.5万", comments: "2559", favorites: "2.8万", shares: "2.7万" }
+  ];
+
+  allPhotos = videoSeeds.map(function(vs, i) {
+    var g = genres[vs.genre];
+    var source = createVideoCover(vs, g);
+    return {
+      id: "video-" + i,
+      name: vs.author + " · " + vs.title,
+      source: source,
+      paletteLabel: vs.author,
+      sceneLabel: vs.tags[0],
+      paletteKey: vs.genre,
+      dominantColor: g.primary,
+      timeLabel: "音乐视频",
+      timeKey: "video",
+      timeSource: "video",
+      locationLabel: vs.tags[1] || "",
+      locationKey: "video-" + vs.genre,
+      locationSource: "video",
+      deviceLabel: "",
+      deviceKey: "",
+      thumbUrl: "",
+      storedDataUrl: "",
+      criterionSource: "palette",
+      manualGroupByCriterion: {
+        palette: { key: vs.genre, title: g.title, spine: g.spine }
+      },
+      videoUrl: "./assets/videos/" + vs.file,
+      videoAuthor: vs.author,
+      videoTitle: vs.title,
+      videoTags: vs.tags,
+      videoMusic: vs.music,
+      videoLikes: vs.likes,
+      videoComments: vs.comments,
+      videoFavorites: vs.favorites,
+      videoShares: vs.shares
+    };
+  });
+
+  app.currentCriterion = "palette";
+}
+
 async function boot() {
   try {
-    await restoreSavedLibrary();
+    var restored = await restoreSavedLibrary();
+    if (!restored || !allPhotos.length) seedSamples();
     collections = buildCollections(app.currentCriterion);
     setupThree();
     setupEvents();
@@ -715,6 +946,8 @@ function setupEvents() {
   drawerGrid.addEventListener("click", onDrawerClick);
   drawerGrid.addEventListener("mouseover", onDrawerHover);
   drawerGrid.addEventListener("mouseleave", () => updateCaption());
+  document.getElementById("videoCloseBtn").addEventListener("click", closeVideoPlayer);
+  document.getElementById("videoEl").addEventListener("click", toggleVideoPlayPause);
 }
 
 function emitBehavior(eventType, data) {
@@ -936,6 +1169,15 @@ function onDrawerClick(event) {
   const photoIndex = Number(button.dataset.photoIndex || 0);
   app.drawerPhoto = photoIndex;
   app.detailPhoto = app.drawerPhoto;
+
+  var collection = collections[app.drawerIndex] || collections[0];
+  var photo = collection && collection.photos ? collection.photos[photoIndex] : null;
+
+  if (photo && photo.videoUrl) {
+    openVideoPlayer(photo);
+    return;
+  }
+
   drawerGrid.querySelectorAll(".photo-thumb").forEach((item, index) => {
     item.classList.toggle("active", index === app.drawerPhoto);
   });
@@ -961,6 +1203,72 @@ function closeDetail() {
   app.flippedId = collections[app.detailCollection].id;
   if (innerHeight >= innerWidth) renderDrawer(app.detailCollection);
   updateCaption();
+}
+
+var currentVideo = { photo: null, playing: false };
+
+function openVideoPlayer(photo) {
+  if (!photo || !photo.videoUrl) return;
+  currentVideo.photo = photo;
+
+  var player = document.getElementById("videoPlayer");
+  var videoEl = document.getElementById("videoEl");
+
+  document.getElementById("videoAuthor").textContent = photo.videoAuthor || "";
+  document.getElementById("videoTitle").textContent = photo.videoTitle || "";
+  document.getElementById("videoMusic").textContent = photo.videoMusic || "";
+  document.getElementById("videoLikes").textContent = (photo.videoLikes || "0") + " 赞";
+  document.getElementById("videoComments").textContent = (photo.videoComments || "0") + " 评论";
+  document.getElementById("videoFavorites").textContent = (photo.videoFavorites || "0") + " 收藏";
+  document.getElementById("videoShares").textContent = (photo.videoShares || "0") + " 分享";
+
+  var tagsEl = document.getElementById("videoTags");
+  tagsEl.replaceChildren();
+  (photo.videoTags || []).forEach(function(t) {
+    var span = document.createElement("span");
+    span.textContent = t;
+    tagsEl.appendChild(span);
+  });
+
+  videoEl.src = photo.videoUrl;
+  videoEl.load();
+  player.classList.add("open");
+  hideDrawer();
+  stopVinylLoop();
+
+  videoEl.addEventListener("canplay", function onReady() {
+    videoEl.removeEventListener("canplay", onReady);
+    videoEl.play().catch(function() {});
+    currentVideo.playing = true;
+  }, { once: true });
+}
+
+function closeVideoPlayer() {
+  var player = document.getElementById("videoPlayer");
+  var videoEl = document.getElementById("videoEl");
+
+  player.classList.remove("open");
+  videoEl.pause();
+  videoEl.removeAttribute("src");
+  videoEl.load();
+  currentVideo.photo = null;
+  currentVideo.playing = false;
+
+  if (app.presentationPhase === "presenting" && vinyl.phase === VS_CAROUSEL) {
+    startVinylLoop();
+  }
+}
+
+function toggleVideoPlayPause() {
+  var videoEl = document.getElementById("videoEl");
+  if (!videoEl.src) return;
+  if (videoEl.paused) {
+    videoEl.play().catch(function() {});
+    currentVideo.playing = true;
+  } else {
+    videoEl.pause();
+    currentVideo.playing = false;
+  }
 }
 
 function buildCollections(criterion) {
@@ -1475,12 +1783,20 @@ function onVinylPointerDown(e) {
   if (vinyl.phase !== VS_CAROUSEL) return;
   if (e.clientY < vinyl.h * 0.12) { hidePresentation(); return; }
   e.preventDefault();
+  vinyl._tapStartX = e.clientX;
+  vinyl._tapStartY = e.clientY;
+  vinyl._tapStartTime = performance.now();
+  vinyl._tapMoved = false;
   useInertiaDrag(e, "start");
 }
 
 function onVinylPointerMove(e) {
   if (!vinyl.dragging) return;
   e.preventDefault();
+  if (Math.abs(e.clientX - (vinyl._tapStartX || 0)) > 8 ||
+      Math.abs(e.clientY - (vinyl._tapStartY || 0)) > 8) {
+    vinyl._tapMoved = true;
+  }
   useInertiaDrag(e, "move");
 }
 
@@ -1488,6 +1804,14 @@ function onVinylPointerUp(e) {
   if (!vinyl.dragging) return;
   e.preventDefault();
   useInertiaDrag(e, "end");
+
+  var dt = performance.now() - (vinyl._tapStartTime || 0);
+  if (!vinyl._tapMoved && dt < 400) {
+    var photo = vinyl.photos[vinyl.selectedIndex];
+    if (photo && photo.videoUrl) {
+      openVideoPlayer(photo);
+    }
+  }
 }
 
 function springEase(t) {
@@ -1671,6 +1995,18 @@ function text(ctx, value, x, y, size, color, weight = 400, align = "left", famil
   ctx.textAlign = align;
   ctx.textBaseline = "alphabetic";
   ctx.fillText(value, x, y);
+}
+
+function truncateText(str, maxLen) {
+  if (!str) return "";
+  return str.length > maxLen ? str.slice(0, maxLen - 1) + "…" : str;
+}
+
+function formatCount(n) {
+  if (n == null) return "0";
+  if (n >= 10000) return (n / 10000).toFixed(1).replace(/\.0$/, "") + "w";
+  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+  return String(n);
 }
 
 function clamp(value, min, max) {
