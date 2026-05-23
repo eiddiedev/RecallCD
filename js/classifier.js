@@ -1,10 +1,10 @@
 const PALETTE_GROUPS = {
-  warm: { title: "日光暖调", spine: "WARM TONE", tags: ["暖色", "旅行", "胶片"] },
-  blue: { title: "蓝色旅行", spine: "BLUE SIDE", tags: ["冷色", "天空", "远行"] },
-  green: { title: "绿意户外", spine: "GREEN WALK", tags: ["植物", "户外", "自然"] },
-  night: { title: "夜色霓虹", spine: "NIGHT LOG", tags: ["暗调", "城市", "霓虹"] },
-  paper: { title: "纸面截图", spine: "PAPER CUT", tags: ["截图", "文档", "白底"] },
-  unknown: { title: "未知记忆", spine: "LOST MIX", tags: ["混合", "未识别", "待命名"] }
+  warm: { title: "日光暖调", spine: "WARM", tags: ["暖色", "旅行", "胶片"] },
+  blue: { title: "蓝色旅行", spine: "BLUE", tags: ["冷色", "天空", "远行"] },
+  green: { title: "绿意户外", spine: "GREEN", tags: ["植物", "户外", "自然"] },
+  night: { title: "夜色霓虹", spine: "NIGHT", tags: ["暗调", "城市", "霓虹"] },
+  paper: { title: "纸面截图", spine: "PAPER", tags: ["截图", "文档", "白底"] },
+  unknown: { title: "未知记忆", spine: "MIXED", tags: ["混合", "未识别", "待命名"] }
 };
 
 const CRITERION_LABELS = {
@@ -86,6 +86,8 @@ export async function parsePhotoMetadata(file) {
     locationLabel: "未知地点",
     locationKey: "unknown-location",
     locationSource: "unknown",
+    deviceLabel: "未知设备",
+    deviceKey: "unknown-device",
     gps: null
   };
 
@@ -106,6 +108,11 @@ export async function parsePhotoMetadata(file) {
       fallback.locationKey = mapped.key;
       fallback.locationSource = "gps";
       fallback.gps = exif.gps;
+    }
+    const device = formatDevice(exif.make, exif.model);
+    if (device) {
+      fallback.deviceLabel = device;
+      fallback.deviceKey = slugify(device);
     }
   } catch {
     return fallback;
@@ -186,15 +193,6 @@ function liftForDarkBackground(rgb) {
   };
 }
 
-export function makeManualGroup(title, criterion) {
-  const clean = String(title || "").trim().slice(0, 18) || "未命名";
-  return {
-    key: `manual-${criterion}-${slugify(clean)}`,
-    title: clean,
-    spine: toSpine(clean)
-  };
-}
-
 export function formatDate(msOrDate) {
   const d = msOrDate instanceof Date ? msOrDate : new Date(msOrDate);
   if (Number.isNaN(d.getTime())) return "未知时间";
@@ -236,6 +234,8 @@ function readTiff(view, start, end) {
   const gpsIfd = ifd0[0x8825] ? readIfd(view, start, start + ifd0[0x8825], little, end) : {};
   return {
     dateTime: ifd0[0x0132],
+    make: ifd0[0x010f],
+    model: ifd0[0x0110],
     dateTimeOriginal: exifIfd[0x9003] || exifIfd[0x9004],
     gps: parseGps(gpsIfd)
   };
@@ -341,6 +341,16 @@ function readAscii(view, offset, length) {
 function toSpine(value) {
   const text = String(value || "MEMORY").trim();
   return /^[\x00-\x7F]+$/.test(text) ? text.toUpperCase() : text;
+}
+
+function formatDevice(make, model) {
+  const maker = String(make || "").trim();
+  const rawModel = String(model || "").trim();
+  const value = rawModel || maker;
+  if (!value) return "";
+  if (/iphone/i.test(value)) return value.replace(/\s+/g, "");
+  if (maker && rawModel && !rawModel.toLowerCase().includes(maker.toLowerCase())) return `${maker} ${rawModel}`.trim();
+  return value;
 }
 
 function slugify(value) {

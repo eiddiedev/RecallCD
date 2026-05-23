@@ -1,19 +1,23 @@
 import * as THREE from "./three.module.min.js";
+import { heicTo, isHeic } from "./heic-to.local.js";
 import {
   analyzePalette,
   classifyPhoto,
   getCriterionLabel,
   makeAdaptivePalette,
-  makeManualGroup,
   parsePhotoMetadata
 } from "./classifier.js";
 
 const ERROR_TEXT = "哎呀，出错了，请重启试试吧~";
 const IMPORT_UNREADABLE_TEXT = "这批照片暂时无法读取，请换一张或转成 JPG/PNG 再试试";
+const STORAGE_KEY = "recallcd.userLibrary.v1";
+const DB_NAME = "recallcd-library";
+const DB_STORE = "library";
 const sceneCanvas = document.getElementById("scene");
 const detail = document.getElementById("detail");
 const detailCanvas = document.getElementById("detailCanvas");
 const importBtn = document.getElementById("importBtn");
+const deleteCdBtn = document.getElementById("deleteCdBtn");
 const backBtn = document.getElementById("backBtn");
 const filePicker = document.getElementById("filePicker");
 const errorEl = document.getElementById("error");
@@ -28,12 +32,6 @@ const importModal = document.getElementById("importModal");
 const criterionButtons = Array.from(document.querySelectorAll("[data-criterion]"));
 const chooseFilesBtn = document.getElementById("chooseFilesBtn");
 const cancelImportBtn = document.getElementById("cancelImportBtn");
-const movePanel = document.getElementById("movePanel");
-const moveTitle = document.getElementById("moveTitle");
-const moveChoices = document.getElementById("moveChoices");
-const moveCustomInput = document.getElementById("moveCustomInput");
-const moveCustomBtn = document.getElementById("moveCustomBtn");
-const moveCloseBtn = document.getElementById("moveCloseBtn");
 
 let collections = [];
 let allPhotos = [];
@@ -66,12 +64,23 @@ const app = {
 };
 
 function makeCollection(id, title, spine, palette, tags, photos = [], criterion = "palette") {
-  return { id, title, spine, palette, tags, photos, criterion, cornerLabel: getCriterionLabel(criterion).toUpperCase() };
+  return {
+    id,
+    title,
+    spine,
+    sideLabels: makeSideLabels(spine, photos[0], criterion),
+    palette,
+    tags,
+    photos,
+    criterion,
+    cornerLabel: getCriterionLabel(criterion).toUpperCase()
+  };
 }
 
-function boot() {
+async function boot() {
   try {
-    seedSamples();
+    const restored = await restoreSavedLibrary();
+    if (!restored) seedSamples();
     collections = buildCollections(app.currentCriterion);
     setupThree();
     setupEvents();
@@ -115,27 +124,34 @@ function createCaseGroup(collection, index) {
   group.userData = { collectionId: collection.id, index };
 
   const coverTexture = makeCoverTexture(collection);
-  const spineTexture = makeTextTexture(collection, "spine");
+  const mainSpineTexture = makeSideTexture(collection, collection.sideLabels.main, "spine", true);
+  const locationSpineTexture = makeSideTexture(collection, collection.sideLabels.location, "spine", false);
   const backTexture = makeTextTexture(collection, "back");
-  const frontSpineTexture = makeFrontSpineTexture(collection);
-  const edgeMaterial = new THREE.MeshPhysicalMaterial({
-    color: new THREE.Color(collection.palette.secondary),
-    metalness: 0,
-    roughness: 0.28,
-    clearcoat: 1,
-    clearcoatRoughness: 0.18,
-    transparent: true,
-    opacity: 0.9
-  });
-  const spineMaterial = new THREE.MeshPhysicalMaterial({
-    map: spineTexture,
+  const timeSpineTexture = makeFrontSpineTexture(collection, collection.sideLabels.time, false);
+  const deviceSpineTexture = makeFrontSpineTexture(collection, collection.sideLabels.device, false);
+  const mainSpineMaterial = new THREE.MeshPhysicalMaterial({
+    map: mainSpineTexture,
     metalness: 0,
     roughness: 0.22,
     clearcoat: 1,
     clearcoatRoughness: 0.14
   });
-  const frontSpineMaterial = new THREE.MeshPhysicalMaterial({
-    map: frontSpineTexture,
+  const locationSpineMaterial = new THREE.MeshPhysicalMaterial({
+    map: locationSpineTexture,
+    metalness: 0,
+    roughness: 0.24,
+    clearcoat: 1,
+    clearcoatRoughness: 0.16
+  });
+  const timeSpineMaterial = new THREE.MeshPhysicalMaterial({
+    map: timeSpineTexture,
+    metalness: 0,
+    roughness: 0.2,
+    clearcoat: 1,
+    clearcoatRoughness: 0.12
+  });
+  const deviceSpineMaterial = new THREE.MeshPhysicalMaterial({
+    map: deviceSpineTexture,
     metalness: 0,
     roughness: 0.2,
     clearcoat: 1,
@@ -146,7 +162,7 @@ function createCaseGroup(collection, index) {
 
   const caseMesh = new THREE.Mesh(
     new THREE.BoxGeometry(2.42, 2.42, 0.36, 1, 1, 1),
-    [spineMaterial, spineMaterial, frontSpineMaterial, frontSpineMaterial, coverMaterial, backMaterial]
+    [mainSpineMaterial, locationSpineMaterial, timeSpineMaterial, deviceSpineMaterial, coverMaterial, backMaterial]
   );
   group.add(caseMesh);
 
@@ -258,7 +274,49 @@ function makeCoverTexture(collection) {
   return texture;
 }
 
+function makeSideLabels(main, photo, criterion) {
+  const location = photo?.locationLabel || "未知地点";
+  const time = photo?.timeKey && photo.timeKey !== "unknown-time"
+    ? photo.timeKey
+    : (photo?.timeLabel || "未知时间").replace(/^拍摄\s*|^文件\s*/, "").slice(0, 7);
+  const device = photo?.deviceLabel || "未知设备";
+  return {
+    main: formatMainSpine(main, photo, criterion),
+    location,
+    time: time || "未知时间",
+    device
+  };
+}
+
+function formatMainSpine(main, photo, criterion) {
+  if (criterion === "location") return romanizeLocation(photo?.locationLabel || main || "未知地点");
+  if (criterion === "time") return photo?.timeKey && photo.timeKey !== "unknown-time" ? photo.timeKey : main || "未知时间";
+  return String(main || "MIXED").replace(/\s+/g, " ").trim().toUpperCase();
+}
+
+function romanizeLocation(value) {
+  const map = {
+    北京: "BeiJing",
+    上海: "ShangHai",
+    广东: "GuangDong",
+    四川: "SiChuan",
+    浙江: "ZheJiang",
+    江苏: "JiangSu",
+    云南: "YunNan",
+    福建: "FuJian",
+    山东: "ShanDong",
+    陕西: "ShaanXi",
+    中国: "China",
+    未知地点: "Unknown"
+  };
+  return map[value] || String(value || "Unknown");
+}
+
 function makeTextTexture(collection, mode) {
+  return makeSideTexture(collection, mode === "spine" ? collection.spine : collection.title, mode, mode === "spine");
+}
+
+function makeSideTexture(collection, label, mode, emphasis = false) {
   const canvas = document.createElement("canvas");
   canvas.width = mode === "spine" ? 192 : 768;
   canvas.height = 1024;
@@ -278,10 +336,10 @@ function makeTextTexture(collection, mode) {
   c.textBaseline = "middle";
   c.fillStyle = collection.palette.text;
   c.textAlign = "center";
-  c.font = `900 ${mode === "spine" ? 38 : 50}px Arial, sans-serif`;
-  c.fillText(collection.spine, 0, 0, canvas.height - 280);
+  c.font = `${emphasis ? 950 : 850} ${mode === "spine" ? (emphasis ? 43 : 34) : (emphasis ? 54 : 42)}px Arial, sans-serif`;
+  c.fillText(label, 0, 0, canvas.height - 280);
   c.fillStyle = collection.palette.text;
-  c.globalAlpha = 0.72;
+  c.globalAlpha = emphasis ? 0.86 : 0.56;
   c.font = "800 32px Arial, sans-serif";
   c.textAlign = "right";
   c.fillText(collection.cornerLabel || "CD", canvas.height / 2 - 52, 0, 190);
@@ -294,7 +352,7 @@ function makeTextTexture(collection, mode) {
   return texture;
 }
 
-function makeFrontSpineTexture(collection) {
+function makeFrontSpineTexture(collection, label = collection.spine, emphasis = false) {
   const canvas = document.createElement("canvas");
   canvas.width = 1024;
   canvas.height = 128;
@@ -311,8 +369,8 @@ function makeFrontSpineTexture(collection) {
   c.fillStyle = collection.palette.text;
   c.textAlign = "center";
   c.textBaseline = "middle";
-  c.font = "900 42px Arial, sans-serif";
-  c.fillText(collection.spine, canvas.width / 2, canvas.height / 2 + 4, canvas.width - 160);
+  c.font = `${emphasis ? 950 : 850} ${emphasis ? 46 : 36}px Arial, sans-serif`;
+  c.fillText(label, canvas.width / 2, canvas.height / 2 + 4, canvas.width - 160);
   c.fillStyle = "rgba(255,255,255,.58)";
   c.font = "800 28px Arial, sans-serif";
   c.fillText(collection.cornerLabel || "CD", 92, canvas.height / 2 + 4, 150);
@@ -425,14 +483,13 @@ function setupEvents() {
   sceneCanvas.addEventListener("pointercancel", () => { app.drag = null; }, { passive: true });
   sceneCanvas.addEventListener("wheel", onWheel, { passive: false });
   importBtn.addEventListener("click", () => openImportModal());
+  deleteCdBtn.addEventListener("click", deleteCurrentCollection);
   chooseFilesBtn.addEventListener("click", () => filePicker.click());
   cancelImportBtn.addEventListener("click", () => closeImportModal());
   criterionButtons.forEach((button) => button.addEventListener("click", () => selectImportCriterion(button.dataset.criterion)));
   backBtn.addEventListener("click", () => closeDetail());
   filePicker.addEventListener("change", () => handleFiles(filePicker.files, app.pendingCriterion));
   drawerGrid.addEventListener("click", onDrawerClick);
-  moveCustomBtn.addEventListener("click", moveToCustomGroup);
-  moveCloseBtn.addEventListener("click", hideMovePanel);
 }
 
 function openImportModal() {
@@ -549,7 +606,6 @@ function presentCollection(index) {
 function hidePresentation() {
   app.flippedId = null;
   hideDrawer();
-  hideMovePanel();
   updateCaption();
 }
 
@@ -590,7 +646,27 @@ function getPhotoDrawerLabel(photo) {
 
 function hideDrawer() {
   photoDrawer.classList.remove("open");
-  hideMovePanel();
+}
+
+function deleteCurrentCollection() {
+  void deleteCurrentCollectionAsync();
+}
+
+async function deleteCurrentCollectionAsync() {
+  const collection = collections[app.selectedIndex] || collections[0];
+  if (!collection) return;
+  const ids = new Set(collection.photos.map((photo) => photo.id));
+  allPhotos = allPhotos.filter((photo) => !ids.has(photo.id));
+  app.flippedId = null;
+  if (!allPhotos.length) {
+    app.hasUserPhotos = false;
+    await removeStoredLibrary();
+    seedSamples();
+  } else {
+    await saveUserLibrary();
+  }
+  regroupCollections(app.currentCriterion, null, false);
+  showNotice(`已删除 ${collection.title}`);
 }
 
 function onDrawerClick(event) {
@@ -601,49 +677,6 @@ function onDrawerClick(event) {
   drawerGrid.querySelectorAll(".photo-thumb").forEach((item, index) => {
     item.classList.toggle("active", index === app.drawerPhoto);
   });
-  showMovePanel((collections[app.selectedIndex] || collections[0])?.photos[app.drawerPhoto]);
-}
-
-function showMovePanel(photo) {
-  if (!photo) return;
-  movePanel.dataset.photoId = photo.id;
-  moveTitle.textContent = `移动：${photo.name}`;
-  moveChoices.replaceChildren();
-  collections.forEach((collection) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = collection.title;
-    button.dataset.collectionId = collection.id;
-    button.className = collection.photos.some((item) => item.id === photo.id) ? "active" : "";
-    button.addEventListener("click", () => movePhotoToGroup(photo.id, {
-      key: collection.id,
-      title: collection.title,
-      spine: collection.spine
-    }));
-    moveChoices.append(button);
-  });
-  moveCustomInput.value = "";
-  movePanel.classList.add("open");
-}
-
-function hideMovePanel() {
-  movePanel.classList.remove("open");
-  movePanel.dataset.photoId = "";
-}
-
-function movePhotoToGroup(photoId, group) {
-  const photo = allPhotos.find((item) => item.id === photoId);
-  if (!photo) return;
-  photo.manualGroupByCriterion ||= {};
-  photo.manualGroupByCriterion[app.currentCriterion] = group;
-  hideMovePanel();
-  regroupCollections(app.currentCriterion, group.key);
-}
-
-function moveToCustomGroup() {
-  const photoId = movePanel.dataset.photoId;
-  const group = makeManualGroup(moveCustomInput.value, app.currentCriterion);
-  movePhotoToGroup(photoId, group);
 }
 
 function openDetail(index) {
@@ -682,7 +715,7 @@ function buildCollections(criterion) {
     });
 }
 
-function regroupCollections(criterion, preferredCollectionId = null) {
+function regroupCollections(criterion, preferredCollectionId = null, presentAfter = false) {
   const previousId = preferredCollectionId || collections[app.selectedIndex]?.id;
   disposeCaseGroups();
   collections = buildCollections(criterion);
@@ -691,7 +724,7 @@ function regroupCollections(criterion, preferredCollectionId = null) {
   app.selectedIndex = clamp(nextIndex, 0, Math.max(collections.length - 1, 0));
   app.targetPosition = app.selectedIndex;
   app.shelfPosition = app.selectedIndex;
-  app.flippedId = collections[app.selectedIndex]?.id || null;
+  app.flippedId = presentAfter ? collections[app.selectedIndex]?.id || null : null;
   app.drawerPhoto = 0;
   app.detailPhoto = 0;
   if (app.flippedId && innerHeight >= innerWidth) renderDrawer(app.selectedIndex);
@@ -783,6 +816,138 @@ function drawStrip(ctx, collection, x, y, w, h) {
   text(ctx, photo.locationLabel, w - 18, y + h - 26, 11, "rgba(255,248,236,.64)", 800, "right");
 }
 
+async function restoreSavedLibrary() {
+  try {
+    const saved = await readStoredLibrary();
+    if (!saved?.photos?.length) return false;
+    const restored = [];
+    for (const item of saved.photos.slice(0, 60)) {
+      if (!item.storedDataUrl) continue;
+      const source = await dataUrlToCanvasSource(item.storedDataUrl);
+      restored.push({
+        ...item,
+        source,
+        isSample: false,
+        thumbUrl: ""
+      });
+    }
+    if (!restored.length) return false;
+    allPhotos = restored;
+    app.hasUserPhotos = true;
+    app.currentCriterion = ["palette", "location", "time"].includes(saved.currentCriterion) ? saved.currentCriterion : "palette";
+    app.pendingCriterion = app.currentCriterion;
+    return true;
+  } catch (err) {
+    console.warn("Saved library restore failed", err);
+    await removeStoredLibrary();
+    return false;
+  }
+}
+
+async function saveUserLibrary() {
+  try {
+    const photos = allPhotos
+      .filter((photo) => !photo.isSample)
+      .slice(0, 60)
+      .map((photo) => ({
+        id: photo.id,
+        isSample: false,
+        name: photo.name,
+        storedDataUrl: photo.storedDataUrl || sourceToStorageDataUrl(photo.source),
+        paletteKey: photo.paletteKey,
+        paletteLabel: photo.paletteLabel,
+        sceneLabel: photo.sceneLabel,
+        dominantColor: photo.dominantColor,
+        timeLabel: photo.timeLabel,
+        timeKey: photo.timeKey,
+        timeSource: photo.timeSource,
+        locationLabel: photo.locationLabel,
+        locationKey: photo.locationKey,
+        locationSource: photo.locationSource,
+        deviceLabel: photo.deviceLabel,
+        deviceKey: photo.deviceKey,
+        gps: photo.gps || null,
+        manualGroupByCriterion: {}
+      }));
+    if (!photos.length) {
+      await removeStoredLibrary();
+      return;
+    }
+    await writeStoredLibrary({
+      currentCriterion: app.currentCriterion,
+      savedAt: Date.now(),
+      photos
+    });
+  } catch (err) {
+    console.warn("Saved library write failed", err);
+    showNotice("照片已导入，但本地空间不足，刷新后可能不会保留", 3600);
+  }
+}
+
+function readStoredLibrary() {
+  return withLibraryStore("readonly", (store) => requestToPromise(store.get(STORAGE_KEY)))
+    .catch(() => {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    });
+}
+
+async function writeStoredLibrary(payload) {
+  try {
+    await withLibraryStore("readwrite", (store) => requestToPromise(store.put(payload, STORAGE_KEY)));
+  } catch {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  }
+}
+
+async function removeStoredLibrary() {
+  localStorage.removeItem(STORAGE_KEY);
+  try {
+    await withLibraryStore("readwrite", (store) => requestToPromise(store.delete(STORAGE_KEY)));
+  } catch {
+    // localStorage fallback has already been cleared.
+  }
+}
+
+function withLibraryStore(mode, action) {
+  if (!("indexedDB" in globalThis)) return Promise.reject(new Error("IndexedDB unavailable"));
+  return new Promise((resolve, reject) => {
+    const open = indexedDB.open(DB_NAME, 1);
+    open.onupgradeneeded = () => {
+      const db = open.result;
+      if (!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE);
+    };
+    open.onerror = () => reject(open.error || new Error("IndexedDB open failed"));
+    open.onsuccess = () => {
+      const db = open.result;
+      const tx = db.transaction(DB_STORE, mode);
+      const store = tx.objectStore(DB_STORE);
+      Promise.resolve(action(store))
+        .then((value) => {
+          tx.oncomplete = () => {
+            db.close();
+            resolve(value);
+          };
+          tx.onerror = () => {
+            db.close();
+            reject(tx.error || new Error("IndexedDB transaction failed"));
+          };
+        })
+        .catch((err) => {
+          db.close();
+          reject(err);
+        });
+    };
+  });
+}
+
+function requestToPromise(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("IndexedDB request failed"));
+  });
+}
+
 function seedSamples() {
   ["warm", "blue", "green", "night", "paper", "unknown"].forEach((kind) => {
     for (let i = 0; i < 3; i += 1) {
@@ -803,6 +968,8 @@ function seedSamples() {
         locationLabel: "未知地点",
         locationKey: "unknown-location",
         locationSource: "sample",
+        deviceLabel: "样例设备",
+        deviceKey: "sample-device",
         manualGroupByCriterion: {}
       });
     }
@@ -868,16 +1035,19 @@ function createSample(kind, variant) {
 async function handleFiles(files, criterion = "palette") {
   if (!files || !files.length) return;
   const importedPhotos = [];
+  const failures = [];
   for (const file of Array.from(files).slice(0, 40)) {
     try {
       const image = await fileToCanvasSource(file);
       const analysis = analyzePalette(image);
       const metadata = await parsePhotoMetadata(file);
+      const storedDataUrl = sourceToStorageDataUrl(image);
       importedPhotos.unshift({
         id: `user-${Date.now()}-${Math.random()}`,
         isSample: false,
         name: cleanName(file.name),
         source: image,
+        storedDataUrl,
         paletteKey: analysis.collectionId,
         paletteLabel: analysis.paletteLabel,
         sceneLabel: analysis.sceneLabel,
@@ -888,17 +1058,20 @@ async function handleFiles(files, criterion = "palette") {
         locationLabel: metadata.locationLabel,
         locationKey: metadata.locationKey,
         locationSource: metadata.locationSource,
+        deviceLabel: metadata.deviceLabel,
+        deviceKey: metadata.deviceKey,
         gps: metadata.gps,
         manualGroupByCriterion: {}
       });
-    } catch {
+    } catch (err) {
+      failures.push(`${file.name || "照片"}：${err?.message || "无法解码"}`);
       continue;
     }
   }
   closeImportModal();
   filePicker.value = "";
   if (!importedPhotos.length) {
-    showNotice(IMPORT_UNREADABLE_TEXT);
+    showNotice(failures[0] || IMPORT_UNREADABLE_TEXT, 4200);
     return;
   }
   if (!app.hasUserPhotos) {
@@ -907,18 +1080,20 @@ async function handleFiles(files, criterion = "palette") {
   }
   allPhotos.unshift(...importedPhotos);
   app.currentCriterion = criterion;
-  regroupCollections(app.currentCriterion);
+  await saveUserLibrary();
+  regroupCollections(app.currentCriterion, null, false);
   updateCaption();
+  if (failures.length) showNotice(`已导入 ${importedPhotos.length} 张，${failures.length} 张失败：${failures[0]}`, 4200);
 }
 
-function showNotice(message) {
+function showNotice(message, duration = 2600) {
   clearTimeout(noticeTimer);
-  error.textContent = message || ERROR_TEXT;
-  error.classList.add("show");
+  errorEl.textContent = message || ERROR_TEXT;
+  errorEl.classList.add("show");
   noticeTimer = setTimeout(() => {
-    error.classList.remove("show");
-    error.textContent = ERROR_TEXT;
-  }, 2600);
+    errorEl.classList.remove("show");
+    errorEl.textContent = ERROR_TEXT;
+  }, duration);
 }
 
 function rebuildCase(collection) {
@@ -951,19 +1126,20 @@ async function fileToCanvasSource(file) {
 async function decodeImageFile(file) {
   try {
     return await decodeBrowserReadableBlob(file);
-  } catch {
-    const heicDecoder = getHeicDecoder();
-    if (isHeicFile(file) && heicDecoder) {
-      const converted = await heicDecoder({
-        blob: file,
-        toType: "image/png",
-        quality: 0.9,
-        multiple: false
-      });
-      const convertedBlob = Array.isArray(converted) ? converted[0] : converted;
-      return decodeBrowserReadableBlob(convertedBlob);
+  } catch (nativeErr) {
+    if (await shouldUseHeicDecoder(file)) {
+      try {
+        const convertedBlob = await heicTo({
+          blob: file,
+          type: "image/jpeg",
+          quality: 0.86
+        });
+        return decodeBrowserReadableBlob(convertedBlob);
+      } catch (heicErr) {
+        throw new Error(`HEIC 转码失败：${formatDecodeError(heicErr)}`);
+      }
     }
-    throw new Error("image decode failed");
+    throw new Error(`图片解码失败：${formatDecodeError(nativeErr)}`);
   }
 }
 
@@ -996,10 +1172,17 @@ function isHeicFile(file) {
   return type.includes("heic") || type.includes("heif") || /\.(heic|heif)$/.test(name);
 }
 
-function getHeicDecoder() {
-  if (typeof globalThis.heic2any === "function") return globalThis.heic2any;
-  if (globalThis.self && typeof globalThis.self.heic2any === "function") return globalThis.self.heic2any;
-  return null;
+async function shouldUseHeicDecoder(file) {
+  if (isHeicFile(file)) return true;
+  try {
+    return await isHeic(file);
+  } catch {
+    return false;
+  }
+}
+
+function formatDecodeError(err) {
+  return String(err?.message || err || "未知原因").replace(/^Error:\s*/, "").slice(0, 80);
 }
 
 function normalizeImageSource(source) {
@@ -1013,6 +1196,34 @@ function normalizeImageSource(source) {
   const ctx = canvas.getContext("2d");
   ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
   return canvas;
+}
+
+function sourceToStorageDataUrl(source) {
+  const maxSide = 1280;
+  const sw = source.width || 1;
+  const sh = source.height || 1;
+  const scale = Math.min(1, maxSide / Math.max(sw, sh));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(sw * scale));
+  canvas.height = Math.max(1, Math.round(sh * scale));
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.78);
+}
+
+function dataUrlToCanvasSource(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.addEventListener("load", () => {
+      try {
+        resolve(normalizeImageSource(image));
+      } catch (err) {
+        reject(err);
+      }
+    }, { once: true });
+    image.addEventListener("error", () => reject(new Error("saved image decode failed")), { once: true });
+    image.src = dataUrl;
+  });
 }
 
 function drawCoverImage(ctx, source, x, y, w, h) {
