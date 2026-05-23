@@ -45,12 +45,19 @@ const app = {
   detailCollection: 0,
   detailPhoto: 0,
   drawerPhoto: 0,
-  detailCtx: detailCanvas.getContext("2d")
+  detailCtx: detailCanvas.getContext("2d"),
+  presentationPhase: "idle",
+  presentationTimer: 0,
+  lastTickTime: 0
 };
 
 function makeCollection(id, title, spine, primary, secondary, text, tags) {
   return { id, title, spine, palette: { primary, secondary, text }, tags, photos: [] };
 }
+
+const SCATTER_MS = 400;
+const ROTATE_BEFORE_DRAWER_MS = 2000;
+const ROTATION_RADS_PER_MS = (2 * Math.PI) / 5000;
 
 function boot() {
   try {
@@ -308,9 +315,33 @@ function makeFrontSpineTexture(collection) {
 function tick() {
   try {
     app.frame = requestAnimationFrame(tick);
+
+    const now = performance.now();
+    const dtMs = app.lastTickTime ? Math.min(now - app.lastTickTime, 50) : 16.67;
+    app.lastTickTime = now;
+
+    if (app.presentationPhase === "scattering") {
+      app.presentationTimer += dtMs;
+      if (app.presentationTimer >= SCATTER_MS) {
+        app.presentationPhase = "rotating";
+        app.presentationTimer = 0;
+        syncPresentationClass();
+      }
+    } else if (app.presentationPhase === "rotating") {
+      app.presentationTimer += dtMs;
+      if (app.presentationTimer >= ROTATE_BEFORE_DRAWER_MS) {
+        app.presentationPhase = "presenting";
+        renderDrawer(app.selectedIndex);
+      }
+    }
+
     app.shelfPosition += (app.targetPosition - app.shelfPosition) * 0.075;
     app.spin += (app.spinTarget - app.spin) * 0.09;
     const portrait = innerHeight >= innerWidth;
+
+    const isAnimating = app.presentationPhase === "scattering"
+      || app.presentationPhase === "rotating"
+      || app.presentationPhase === "presenting";
 
     app.groups.forEach((group, index) => {
       const delta = index - app.shelfPosition;
@@ -324,16 +355,40 @@ function tick() {
       if (portrait) {
         const spiralPhase = app.spin * 0.38 + index * 0.13;
         const focusFalloff = 1 - Math.min(Math.abs(clamped) * 0.08, 0.34);
-        targetX = 0;
-        targetRotY = 0;
-        if (app.flippedId) {
+
+        if (isAnimating && app.flippedId) {
+          const spread = index - flippedIndex;
+          const dir = spread > 0 ? 1 : -1;
+          const dist = Math.abs(spread);
+          if (isFlipped) {
+            targetX = 0;
+            targetY = 1.18;
+            targetZ = 2.18;
+            targetRotX = THREE.MathUtils.degToRad(-2);
+            targetRotZ = 0;
+            targetScale = 0.688;
+            if (app.presentationPhase === "rotating" || app.presentationPhase === "presenting") {
+              targetRotY = group.rotation.y + ROTATION_RADS_PER_MS * dtMs;
+            } else {
+              targetRotY = 0;
+            }
+          } else {
+            targetX = dir * (3.5 + dist * 2.0);
+            targetY = -dir * 0.8 - dist * 0.9;
+            targetZ = -2.0 - dist * 0.6;
+            targetRotX = THREE.MathUtils.degToRad(68);
+            targetRotY = dir * 0.45;
+            targetRotZ = dir * 0.3;
+            targetScale = 0.032;
+          }
+        } else if (app.flippedId) {
           const spread = index - flippedIndex;
           if (isFlipped) {
             targetY = 1.18;
             targetZ = 2.18;
             targetRotX = THREE.MathUtils.degToRad(-2);
             targetRotZ = 0;
-            targetScale = 0.86;
+            targetScale = 0.688;
           } else {
             targetY = spread < 0
               ? 2.52 + Math.abs(spread) * 0.24
@@ -341,9 +396,13 @@ function tick() {
             targetZ = -0.42 - Math.abs(spread) * 0.12;
             targetRotX = THREE.MathUtils.degToRad(68);
             targetRotZ = spiralPhase * 0.62;
-            targetScale = 0.56 - Math.min(Math.abs(spread) * 0.035, 0.12);
+            targetScale = 0.448 - Math.min(Math.abs(spread) * 0.028, 0.096);
           }
+          targetX = 0;
+          targetRotY = 0;
         } else {
+          targetX = 0;
+          targetRotY = 0;
           targetY = -clamped * 0.64;
           targetZ = 0.04 - Math.abs(clamped) * 0.025;
           targetRotX = THREE.MathUtils.degToRad(68);
@@ -361,8 +420,13 @@ function tick() {
       }
 
       group.position.lerp(new THREE.Vector3(targetX, targetY, targetZ), 0.11);
+
+      if (isFlipped && (app.presentationPhase === "rotating" || app.presentationPhase === "presenting")) {
+        group.rotation.y = targetRotY;
+      } else {
+        group.rotation.y += (targetRotY - group.rotation.y) * 0.11;
+      }
       group.rotation.x += (targetRotX - group.rotation.x) * 0.11;
-      group.rotation.y += (targetRotY - group.rotation.y) * 0.11;
       group.rotation.z += (targetRotZ - group.rotation.z) * 0.11;
       const nextScale = group.scale.x + (targetScale - group.scale.x) * 0.11;
       group.scale.setScalar(nextScale);
@@ -370,7 +434,7 @@ function tick() {
     });
 
     if (app.titlePlane) {
-      const showTitlePlane = Boolean(portrait && app.flippedId);
+      const showTitlePlane = Boolean(portrait && app.flippedId && (app.presentationPhase === "rotating" || app.presentationPhase === "presenting"));
       app.titlePlane.visible = showTitlePlane;
       if (showTitlePlane) {
         app.titlePlane.position.lerp(new THREE.Vector3(0, 1.18, 1.44), 0.16);
@@ -413,6 +477,7 @@ function setupEvents() {
 }
 
 function onPointerDown(event) {
+  if (app.presentationPhase !== "idle") return;
   app.drag = {
     x: event.clientX,
     y: event.clientY,
@@ -472,7 +537,7 @@ function onPointerUp(event) {
 
 function onWheel(event) {
   event.preventDefault();
-  if (app.flippedId) return;
+  if (app.flippedId || app.presentationPhase !== "idle") return;
   const direction = event.deltaY > 0 ? 1 : -1;
   app.targetPosition = clamp(app.targetPosition + direction * 0.18, 0, collections.length - 1);
   app.selectedIndex = Math.round(app.targetPosition);
@@ -503,19 +568,24 @@ function presentCollection(index) {
   app.targetPosition = index;
   app.flippedId = collections[index].id;
   app.drawerPhoto = 0;
-  renderDrawer(index);
+  app.presentationPhase = "scattering";
+  app.presentationTimer = 0;
+  app.lastTickTime = 0;
   updateCaption();
 }
 
 function hidePresentation() {
   app.flippedId = null;
+  app.presentationPhase = "idle";
+  app.presentationTimer = 0;
   hideDrawer();
   updateCaption();
 }
 
 function syncPresentationClass() {
   const collection = collections[app.selectedIndex] || collections[0];
-  const presenting = Boolean(app.flippedId && innerHeight >= innerWidth);
+  const presenting = Boolean(app.flippedId && innerHeight >= innerWidth
+    && (app.presentationPhase === "rotating" || app.presentationPhase === "presenting"));
   document.body.classList.toggle("presenting", presenting);
   if (albumTitleLayer) albumTitleLayer.querySelector("strong").textContent = collection.title;
   updateTitlePlane(collection);
