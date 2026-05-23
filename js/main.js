@@ -36,6 +36,8 @@ const locationModal = document.getElementById("locationModal");
 const locationInput = document.getElementById("locationInput");
 const saveLocationBtn = document.getElementById("saveLocationBtn");
 const cancelLocationBtn = document.getElementById("cancelLocationBtn");
+const vinylStage = document.getElementById("vinylStage");
+const vinylCtx = vinylStage ? vinylStage.getContext("2d") : null;
 
 let collections = [];
 let allPhotos = [];
@@ -70,6 +72,59 @@ const app = {
   lastTickTime: 0
 };
 
+const VS_HIDDEN = "hidden";
+const VS_SLIDEUP = "slideUp";
+const VS_CAROUSEL = "carousel";
+
+const VINYL_SLIDEUP_MS = 520;
+const ARC_ANGLE_STEP = 0.205;
+const PREVIEW_TRANSITION_MS = 340;
+
+const vinyl = {
+  phase: VS_HIDDEN,
+  timer: 0,
+  w: 0, h: 0,
+  cx: 0, cy: 0,
+  vinylR: 0,
+  ringR: 0,
+  vinylY: 0,
+  vinylTargetY: 0,
+  angle: 0,
+  position: 0,
+  targetPosition: 0,
+  positionVelocity: 0,
+  dragStartX: 0,
+  dragStartPosition: 0,
+  dragLastX: 0,
+  dragLastTime: 0,
+  dragVelocity: 0,
+  dragging: false,
+  photos: [],
+  selectedIndex: 0,
+  previousIndex: 0,
+  previewFromIndex: 0,
+  previewStartedAt: 0,
+  thumbs: [],
+  animating: false,
+  animFrame: 0,
+  lastFrameTime: 0,
+  collectionId: null,
+  palette: null
+};
+
+function setGroupOpacity(group, opacity) {
+  group.traverse(function (child) {
+    if (child.isMesh) {
+      var mats = Array.isArray(child.material) ? child.material : [child.material];
+      mats.forEach(function (m) {
+        m.transparent = true;
+        m.opacity = opacity;
+        m.needsUpdate = true;
+      });
+    }
+  });
+}
+
 function makeCollection(id, title, spine, palette, photos = [], criterion = "palette") {
   const collection = {
     id,
@@ -83,9 +138,8 @@ function makeCollection(id, title, spine, palette, photos = [], criterion = "pal
   return collection;
 }
 
-const SCATTER_MS = 400;
-const ROTATE_BEFORE_DRAWER_MS = 2000;
-const ROTATION_RADS_PER_MS = (2 * Math.PI) / 5000;
+const SCATTER_MS = 700;
+const EXIT_ROTATION_SPEED = (2 * Math.PI) / 1400;
 
 async function boot() {
   try {
@@ -487,15 +541,39 @@ function tick() {
     if (app.presentationPhase === "scattering") {
       app.presentationTimer += dtMs;
       if (app.presentationTimer >= SCATTER_MS) {
-        app.presentationPhase = "rotating";
-        app.presentationTimer = 0;
-        syncPresentationClass();
-      }
-    } else if (app.presentationPhase === "rotating") {
-      app.presentationTimer += dtMs;
-      if (app.presentationTimer >= ROTATE_BEFORE_DRAWER_MS) {
         app.presentationPhase = "presenting";
-        renderDrawer(app.selectedIndex);
+        initVinylStage();
+        const collection = collections[app.selectedIndex] || collections[0];
+        vinyl.photos = collection.photos.slice();
+        vinyl.selectedIndex = 0;
+        vinyl.previousIndex = 0;
+        vinyl.previewFromIndex = 0;
+        vinyl.previewStartedAt = performance.now();
+        vinyl.position = 0;
+        vinyl.targetPosition = 0;
+        vinyl.positionVelocity = 0;
+        vinyl.dragVelocity = 0;
+        vinyl.angle = 0;
+        vinyl.thumbs = vinyl.photos.map(function(photo) {
+          var c = document.createElement("canvas");
+          var size = 180;
+          var sw = photo.source.width || 480;
+          var sh = photo.source.height || 640;
+          var ratio = sw / sh;
+          c.width = Math.max(80, Math.round(size * ratio));
+          c.height = size;
+          var tctx = c.getContext("2d");
+          tctx.drawImage(photo.source, 0, 0, c.width, c.height);
+          return c;
+        });
+        vinyl.collectionId = collection.id;
+        vinyl.palette = collection.palette;
+        vinyl.phase = VS_SLIDEUP;
+        vinyl.timer = performance.now();
+        vinyl.lastFrameTime = vinyl.timer;
+        vinyl.vinylY = vinyl.h + vinyl.vinylR * 1.1;
+        vinyl.vinylTargetY = vinyl.cy;
+        startVinylLoop();
       }
     }
 
@@ -503,9 +581,7 @@ function tick() {
     app.spin += (app.spinTarget - app.spin) * 0.09;
     const portrait = innerHeight >= innerWidth;
 
-    const isAnimating = app.presentationPhase === "scattering"
-      || app.presentationPhase === "rotating"
-      || app.presentationPhase === "presenting";
+    const isAnimating = app.presentationPhase === "scattering" || app.presentationPhase === "presenting";
 
     app.groups.forEach((group, index) => {
       const delta = index - app.shelfPosition;
@@ -526,24 +602,20 @@ function tick() {
           const dist = Math.abs(spread);
           if (isFlipped) {
             targetX = 0;
-            targetY = 1.18;
-            targetZ = 2.18;
-            targetRotX = THREE.MathUtils.degToRad(-2);
+            targetY = -4.5;
+            targetZ = 1.2;
+            targetRotX = THREE.MathUtils.degToRad(8);
             targetRotZ = 0;
-            targetScale = 0.688;
-            if (app.presentationPhase === "rotating" || app.presentationPhase === "presenting") {
-              targetRotY = group.rotation.y + ROTATION_RADS_PER_MS * dtMs;
-            } else {
-              targetRotY = 0;
-            }
+            targetScale = 0.5;
+            targetRotY = group.rotation.y + EXIT_ROTATION_SPEED * dtMs;
           } else {
-            targetX = dir * (3.5 + dist * 2.0);
-            targetY = -dir * 0.8 - dist * 0.9;
-            targetZ = -2.0 - dist * 0.6;
+            targetX = 0;
+            targetRotY = 0;
+            targetY = -clamped * 0.64;
+            targetZ = 0.04 - Math.abs(clamped) * 0.025;
             targetRotX = THREE.MathUtils.degToRad(68);
-            targetRotY = dir * 0.45;
-            targetRotZ = dir * 0.3;
-            targetScale = 0.032;
+            targetRotZ = spiralPhase * focusFalloff;
+            targetScale = 0.76 - Math.min(Math.abs(clamped) * 0.02, 0.1);
           }
         } else if (app.flippedId) {
           const spread = index - flippedIndex;
@@ -585,7 +657,7 @@ function tick() {
 
       group.position.lerp(new THREE.Vector3(targetX, targetY, targetZ), 0.11);
 
-      if (isFlipped && (app.presentationPhase === "rotating" || app.presentationPhase === "presenting")) {
+      if (isFlipped && app.presentationPhase === "scattering") {
         group.rotation.y = targetRotY;
       } else {
         group.rotation.y += (targetRotY - group.rotation.y) * 0.11;
@@ -594,17 +666,29 @@ function tick() {
       group.rotation.z += (targetRotZ - group.rotation.z) * 0.11;
       const nextScale = group.scale.x + (targetScale - group.scale.x) * 0.11;
       group.scale.setScalar(nextScale);
-      group.visible = Math.abs(clamped) < (portrait ? 4.2 : 8) || isReceding || isFlipped;
+
+      if (isAnimating && app.flippedId && !isFlipped && app.presentationPhase === "scattering") {
+        var fadeT = Math.min(app.presentationTimer / SCATTER_MS, 1);
+        setGroupOpacity(group, 1 - fadeT);
+        group.userData._faded = true;
+        if (fadeT >= 0.98) group.visible = false;
+      } else if (group.userData._faded && app.presentationPhase !== "scattering") {
+        group.visible = false;
+      }
+
+      if (!isAnimating) {
+        if (group.userData._faded) {
+          setGroupOpacity(group, 1);
+          group.userData._faded = false;
+        }
+        group.visible = Math.abs(clamped) < (portrait ? 4.2 : 8) || isReceding || isFlipped;
+      } else if (!group.userData._faded) {
+        group.visible = Math.abs(clamped) < (portrait ? 4.2 : 8) || isReceding || isFlipped;
+      }
     });
 
     if (app.titlePlane) {
-      const showTitlePlane = Boolean(portrait && app.flippedId && (app.presentationPhase === "rotating" || app.presentationPhase === "presenting"));
-      app.titlePlane.visible = showTitlePlane;
-      if (showTitlePlane) {
-        app.titlePlane.position.lerp(new THREE.Vector3(0, 1.18, 1.44), 0.16);
-        app.titlePlane.rotation.set(0, 0, 0);
-        app.titlePlane.scale.setScalar(1);
-      }
+      app.titlePlane.visible = false;
     }
 
     app.renderer.render(app.scene, app.camera);
@@ -626,10 +710,10 @@ function resize() {
   syncPresentationClass();
   updateTabIndicator();
   drawDetail();
+  if (vinyl.phase !== VS_HIDDEN) resizeVinyl();
 }
 
 function setupEvents() {
-  console.log("setupEvents: attaching listeners");
   addEventListener("resize", resize, { passive: true });
   sceneCanvas.addEventListener("pointerdown", onPointerDown, { passive: true });
   sceneCanvas.addEventListener("pointermove", onPointerMove, { passive: true });
@@ -638,6 +722,10 @@ function setupEvents() {
   sceneCanvas.addEventListener("click", onCanvasClick, { passive: true });
   sceneCanvas.addEventListener("touchend", onTouchEnd, { passive: true });
   sceneCanvas.addEventListener("wheel", onWheel, { passive: false });
+  vinylStage.addEventListener("pointerdown", onVinylPointerDown);
+  vinylStage.addEventListener("pointermove", onVinylPointerMove);
+  vinylStage.addEventListener("pointerup", onVinylPointerUp);
+  vinylStage.addEventListener("pointercancel", onVinylPointerUp);
   importBtn.addEventListener("click", () => filePicker.click());
   deleteCdBtn.addEventListener("click", deleteCurrentCollection);
   tabButtons.forEach((button) => button.addEventListener("click", () => switchTab(button.dataset.tab)));
@@ -709,7 +797,7 @@ function saveLocationAssignment() {
 }
 
 function onPointerDown(event) {
-  console.log("pointerdown", event.clientX, event.clientY, app.presentationPhase);
+  if (vinyl.phase !== VS_HIDDEN) return;
   if (app.presentationPhase !== "idle") return;
   app.drag = {
     x: event.clientX,
@@ -736,7 +824,6 @@ function onPointerMove(event) {
 }
 
 function onPointerUp(event) {
-  console.log("pointerup", event.clientX, event.clientY);
   const drag = app.drag;
   app.drag = null;
   if (!drag) return;
@@ -764,7 +851,6 @@ function onTouchEnd(event) {
 
 let lastTapTime = 0;
 function handleCanvasTap(x, y) {
-  console.log("handleCanvasTap", x, y, app.presentationPhase);
   const now = performance.now();
   if (now - lastTapTime < 300) return;
   lastTapTime = now;
@@ -781,7 +867,7 @@ function handleCanvasTap(x, y) {
     presentCollection(app.selectedIndex);
     return;
   }
-  if (app.flippedId === collection.id) openDetail(app.selectedIndex);
+  if (app.flippedId === collection.id) return;
   else {
     app.flippedId = collection.id;
     hideDrawer();
@@ -826,7 +912,6 @@ function presentCollection(index) {
   app.selectedIndex = index;
   app.targetPosition = index;
   app.flippedId = collections[index].id;
-  app.drawerPhoto = 0;
   app.presentationPhase = "scattering";
   app.presentationTimer = 0;
   app.lastTickTime = 0;
@@ -834,10 +919,15 @@ function presentCollection(index) {
 }
 
 function hidePresentation() {
+  if (vinyl.phase !== VS_HIDDEN) {
+    vinyl.phase = VS_HIDDEN;
+    stopVinylLoop();
+    vinylStage.classList.remove("active");
+    document.body.classList.remove("presenting");
+  }
   app.flippedId = null;
   app.presentationPhase = "idle";
   app.presentationTimer = 0;
-  hideDrawer();
   updateCaption();
 }
 
@@ -1053,20 +1143,437 @@ function drawPhotoMeta(ctx, photo, x, y, w, h) {
   text(ctx, String(app.detailPhoto + 1).padStart(2, "0"), x + w - 24, y + h - 36, clamp(w * .12, 48, 86), "rgba(255,248,236,.92)", 900, "right", "Impact");
 }
 
-function drawStrip(ctx, collection, x, y, w, h) {
-  ctx.fillStyle = "#060505";
-  ctx.fillRect(x, y, w, h);
-  const size = 44;
-  collection.photos.slice(0, 8).forEach((photo, i) => {
-    const tx = 18 + i * 52;
-    drawCoverImage(ctx, photo.source, tx, y + 10, size, size);
-    ctx.strokeStyle = i === app.detailPhoto ? "#fff0b8" : "rgba(255,255,255,.24)";
-    ctx.lineWidth = i === app.detailPhoto ? 3 : 1;
-    ctx.strokeRect(tx, y + 10, size, size);
-  });
-  const photo = collection.photos[app.detailPhoto] || collection.photos[0];
-  text(ctx, photo.timeLabel, 18, y + h - 26, 11, "rgba(255,248,236,.64)", 800);
-  text(ctx, photo.locationLabel, w - 18, y + h - 26, 11, "rgba(255,248,236,.64)", 800, "right");
+function initVinylStage() {
+  vinylStage.classList.add("active");
+  resizeVinyl();
+}
+
+function resizeVinyl() {
+  const w = Math.max(320, innerWidth || 320);
+  const h = Math.max(320, innerHeight || 640);
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  vinyl.w = w; vinyl.h = h;
+  vinylStage.width = w * dpr;
+  vinylStage.height = h * dpr;
+  vinylStage.style.width = w + "px";
+  vinylStage.style.height = h + "px";
+  vinylCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  vinyl.cx = w / 2;
+  vinyl.vinylR = clamp(w * 0.86, 310, h * 0.54);
+  vinyl.cy = h + vinyl.vinylR * 0.46;
+  vinyl.ringR = vinyl.vinylR * 0.92;
+  vinyl.vinylTargetY = vinyl.cy;
+}
+
+function VinylCarousel(ctx, now, dt) {
+  updateVinylMotion(dt, now);
+  PhotoPreview(ctx, now);
+  drawVinylDisc(ctx, vinyl.cx, vinyl.vinylY, vinyl.vinylR, vinyl.angle, vinyl.palette || { primary: "#c74731", secondary: "#1c0c08", text: "#fff0c8" });
+  ArcWheel(ctx);
+  drawVinylChrome(ctx);
+}
+
+function updateVinylMotion(dt, now) {
+  if (vinyl.phase !== VS_CAROUSEL) return;
+  const maxPosition = Math.max(vinyl.photos.length - 1, 0);
+  if (!vinyl.dragging) {
+    if (Math.abs(vinyl.dragVelocity) > 0.003) {
+      vinyl.position += vinyl.dragVelocity * dt;
+      vinyl.dragVelocity *= Math.pow(0.91, dt);
+      if (vinyl.position < 0 || vinyl.position > maxPosition) vinyl.dragVelocity *= 0.45;
+      vinyl.position = rubberClamp(vinyl.position, 0, maxPosition, 0.22);
+      if (Math.abs(vinyl.dragVelocity) < 0.012) {
+        vinyl.dragVelocity = 0;
+        vinyl.targetPosition = clamp(Math.round(vinyl.position), 0, maxPosition);
+      }
+    }
+    const pull = vinyl.targetPosition - vinyl.position;
+    vinyl.positionVelocity += pull * 0.045 * dt;
+    vinyl.positionVelocity *= Math.pow(0.72, dt);
+    vinyl.position += vinyl.positionVelocity * dt;
+    if (Math.abs(pull) < 0.001 && Math.abs(vinyl.positionVelocity) < 0.001) {
+      vinyl.position = vinyl.targetPosition;
+      vinyl.positionVelocity = 0;
+    }
+  }
+  vinyl.position = clamp(vinyl.position, 0, maxPosition);
+  vinyl.angle = -vinyl.position * ARC_ANGLE_STEP;
+  setVinylSelected(clamp(Math.round(vinyl.position), 0, maxPosition), now);
+}
+
+function setVinylSelected(index, now) {
+  if (index === vinyl.selectedIndex) return;
+  vinyl.previewFromIndex = vinyl.selectedIndex;
+  vinyl.previousIndex = vinyl.selectedIndex;
+  vinyl.selectedIndex = index;
+  vinyl.previewStartedAt = now;
+}
+
+function PhotoPreview(ctx, now) {
+  const photo = vinyl.photos[vinyl.selectedIndex];
+  if (!photo) return;
+  const fromPhoto = vinyl.photos[vinyl.previewFromIndex] || photo;
+  const topLimit = Math.max(260, vinyl.vinylY - vinyl.ringR - 116);
+  const bgColor = photo.dominantColor || vinyl.palette?.primary || "#1f1b18";
+
+  const bg = ctx.createLinearGradient(0, 0, 0, vinyl.h);
+  bg.addColorStop(0, tintHex(bgColor, 0.14, 0.88));
+  bg.addColorStop(0.42, "rgba(8,7,7,0.9)");
+  bg.addColorStop(1, "#020202");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, vinyl.w, vinyl.h);
+
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+  ctx.filter = "blur(34px)";
+  drawCoverImage(ctx, photo.source, -vinyl.w * 0.18, -vinyl.h * 0.05, vinyl.w * 1.36, topLimit * 0.9);
+  ctx.restore();
+
+  const progress = clamp((now - vinyl.previewStartedAt) / PREVIEW_TRANSITION_MS, 0, 1);
+  const ease = springEase(progress);
+  if (fromPhoto !== photo && progress < 1) drawPreviewImage(ctx, fromPhoto, topLimit, 1 - ease, 1 + ease * 0.018, -8 * ease);
+  drawPreviewImage(ctx, photo, topLimit, ease, 0.965 + ease * 0.035, 16 * (1 - ease));
+
+  ctx.save();
+  ctx.fillStyle = "rgba(255,248,232,.72)";
+  ctx.font = "800 11px Arial, PingFang SC, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(String(vinyl.selectedIndex + 1).padStart(2, "0") + " / " + String(vinyl.photos.length).padStart(2, "0"), vinyl.w / 2, Math.max(30, topLimit - 22));
+  ctx.restore();
+}
+
+function drawPreviewImage(ctx, photo, areaH, alpha, scale, translateY) {
+  const margin = Math.max(24, vinyl.w * 0.07);
+  const maxW = vinyl.w - margin * 2;
+  const maxH = Math.max(190, areaH - 78);
+  const sw = photo.source.width || 480;
+  const sh = photo.source.height || 640;
+  const ratio = sw / sh;
+  let dw, dh;
+  if (maxW / maxH > ratio) { dh = maxH; dw = dh * ratio; }
+  else { dw = maxW; dh = dw / ratio; }
+  dw *= scale;
+  dh *= scale;
+  const px = (vinyl.w - dw) / 2;
+  const py = Math.max(54, (areaH - dh) / 2) + translateY;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.shadowColor = "rgba(0,0,0,.55)";
+  ctx.shadowBlur = 28;
+  ctx.shadowOffsetY = 16;
+  ctx.beginPath();
+  roundRect(ctx, px, py, dw, dh, 10);
+  ctx.fillStyle = "#111";
+  ctx.fill();
+  ctx.clip();
+  ctx.filter = alpha < 0.98 ? "blur(" + ((1 - alpha) * 5).toFixed(2) + "px)" : "none";
+  drawCoverImage(ctx, photo.source, px, py, dw, dh);
+  ctx.restore();
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = "rgba(255,255,255,.18)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  roundRect(ctx, px, py, dw, dh, 10);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawVinylDisc(ctx, cx, cy, r, angle, palette) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(angle * 0.24);
+
+  ctx.beginPath(); ctx.arc(0, 0, r + 12, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(0,0,0,.58)"; ctx.fill();
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2);
+  const discGrad = ctx.createRadialGradient(-r * 0.16, -r * 0.28, r * 0.08, 0, 0, r);
+  discGrad.addColorStop(0, "#24211e");
+  discGrad.addColorStop(0.36, "#151413");
+  discGrad.addColorStop(0.72, "#090909");
+  discGrad.addColorStop(1, "#020202");
+  ctx.fillStyle = discGrad; ctx.fill();
+
+  for (let i = 0; i < 34; i += 1) {
+    const gr = r * (0.2 + i * 0.023);
+    ctx.beginPath(); ctx.arc(0, 0, gr, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(255,255,255," + (i % 4 === 0 ? 0.036 : 0.014) + ")";
+    ctx.lineWidth = i % 5 === 0 ? 0.9 : 0.45; ctx.stroke();
+  }
+
+  const labelR = r * 0.3;
+  ctx.beginPath(); ctx.arc(0, 0, labelR, 0, Math.PI * 2);
+  ctx.fillStyle = palette.primary; ctx.fill();
+  ctx.beginPath(); ctx.arc(0, 0, labelR * 0.92, 0, Math.PI * 2);
+  ctx.fillStyle = palette.secondary; ctx.fill();
+  ctx.save();
+  ctx.beginPath(); ctx.arc(0, 0, labelR * 0.92, 0, Math.PI * 2); ctx.clip();
+  ctx.fillStyle = palette.primary;
+  ctx.font = "800 " + (labelR * 0.34) + "px Impact, Arial Black, sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("RECALL", 0, -labelR * 0.16);
+  ctx.font = "700 " + (labelR * 0.24) + "px Arial, sans-serif";
+  ctx.fillStyle = palette.text;
+  ctx.fillText("CD 2026", 0, labelR * 0.28);
+  ctx.restore();
+
+  ctx.beginPath(); ctx.arc(0, 0, r * 0.045, 0, Math.PI * 2);
+  ctx.fillStyle = "#020202"; ctx.fill();
+
+  const shine = ctx.createLinearGradient(-r * 0.72, -r * 0.78, r * 0.75, r * 0.3);
+  shine.addColorStop(0, "rgba(255,255,255,0)");
+  shine.addColorStop(0.44, "rgba(255,255,255,.035)");
+  shine.addColorStop(0.5, "rgba(255,255,255,.12)");
+  shine.addColorStop(0.56, "rgba(255,255,255,.026)");
+  shine.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fillStyle = shine; ctx.fill();
+  ctx.restore();
+}
+
+function ArcWheel(ctx) {
+  const cx = vinyl.cx, cy = vinyl.vinylY, ringR = vinyl.ringR;
+  const thumbs = vinyl.thumbs;
+  if (!thumbs.length) return;
+  const visible = [];
+
+  for (let i = 0; i < thumbs.length; i += 1) {
+    const offset = i - vinyl.position;
+    const angle = offset * ARC_ANGLE_STEP;
+    if (Math.abs(angle) > 1.55) continue;
+    const absOffset = Math.abs(offset);
+    const focus = clamp(1 - absOffset / 4.25, 0, 1);
+    visible.push({ i, offset, angle, focus });
+  }
+
+  visible.sort((a, b) => a.focus - b.focus);
+
+  drawArcGuide(ctx, cx, cy, ringR);
+  visible.forEach((item) => drawArcThumbnail(ctx, item));
+}
+
+function drawArcGuide(ctx, cx, cy, radius) {
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, radius, -Math.PI * 0.78, -Math.PI * 0.22);
+  ctx.strokeStyle = "rgba(255,255,255,.07)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, radius + 12, -Math.PI * 0.74, -Math.PI * 0.26);
+  ctx.strokeStyle = "rgba(0,0,0,.28)";
+  ctx.lineWidth = 18;
+  ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, radius, -Math.PI / 2 - 0.11, -Math.PI / 2 + 0.11);
+  ctx.strokeStyle = "rgba(255,255,255,.34)";
+  ctx.lineWidth = 3;
+  ctx.shadowColor = "rgba(255,255,255,.32)";
+  ctx.shadowBlur = 12;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawArcThumbnail(ctx, item) {
+  const thumb = vinyl.thumbs[item.i];
+  const angle = item.angle;
+  const x = vinyl.cx + Math.sin(angle) * vinyl.ringR;
+  const y = vinyl.vinylY - Math.cos(angle) * vinyl.ringR;
+  const absOffset = Math.abs(item.offset);
+  const focus = smooth01(item.focus);
+  const scale = 0.52 + focus * 0.74;
+  const opacity = 0.18 + focus * 0.82;
+  const blur = (1 - focus) * 3.2;
+  const rotate = angle * 0.78;
+  const baseW = clamp(vinyl.w * 0.18, 64, 92);
+  const width = baseW * scale;
+  const ratio = thumb ? thumb.width / thumb.height : 0.76;
+  const height = width / ratio;
+  const lift = -focus * 14;
+
+  ctx.save();
+  ctx.translate(x, y + lift);
+  ctx.rotate(rotate);
+  ctx.globalAlpha = opacity;
+  ctx.filter = blur > 0.1 ? "blur(" + blur.toFixed(2) + "px)" : "none";
+  if (focus > 0.42) {
+    ctx.shadowColor = "rgba(255,255,255," + (0.24 * focus).toFixed(2) + ")";
+    ctx.shadowBlur = 18 * focus;
+  }
+  ctx.beginPath();
+  roundRect(ctx, -width / 2, -height / 2, width, height, 7);
+  ctx.clip();
+  if (thumb) ctx.drawImage(thumb, -width / 2, -height / 2, width, height);
+  else {
+    ctx.fillStyle = "#181512";
+    ctx.fillRect(-width / 2, -height / 2, width, height);
+  }
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(x, y + lift);
+  ctx.rotate(rotate);
+  ctx.globalAlpha = clamp(opacity + 0.08, 0, 1);
+  ctx.strokeStyle = absOffset < 0.5 ? "rgba(255,246,226,.92)" : "rgba(255,255,255,.18)";
+  ctx.lineWidth = absOffset < 0.5 ? 2.3 : 0.8;
+  ctx.beginPath();
+  roundRect(ctx, -width / 2, -height / 2, width, height, 7);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawVinylChrome(ctx) {
+  ctx.save();
+  const grad = ctx.createLinearGradient(0, 0, 0, vinyl.h);
+  grad.addColorStop(0, "rgba(0,0,0,.28)");
+  grad.addColorStop(0.18, "rgba(0,0,0,0)");
+  grad.addColorStop(0.78, "rgba(0,0,0,0)");
+  grad.addColorStop(1, "rgba(0,0,0,.66)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, vinyl.w, vinyl.h);
+  ctx.fillStyle = "rgba(255,248,232,.54)";
+  ctx.font = "700 11px Arial, PingFang SC, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("轻触上方返回", vinyl.w / 2, 28);
+  ctx.restore();
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function tickVinyl() {
+  if (vinyl.phase === VS_HIDDEN) { stopVinylLoop(); return; }
+  vinyl.animFrame = requestAnimationFrame(tickVinyl);
+  const ctx = vinylCtx;
+  const w = vinyl.w, h = vinyl.h;
+  const now = performance.now();
+  const dt = clamp((now - (vinyl.lastFrameTime || now)) / 16.67, 0.6, 2.2);
+  vinyl.lastFrameTime = now;
+
+  if (vinyl.phase === VS_SLIDEUP) {
+    const elapsed = now - vinyl.timer;
+    const t = Math.min(elapsed / VINYL_SLIDEUP_MS, 1);
+    const ease = springEase(t);
+    vinyl.vinylY = h + vinyl.vinylR * 1.1 - ease * (h + vinyl.vinylR * 1.1 - vinyl.vinylTargetY);
+    if (t >= 1) { enterCarousel(); }
+  }
+
+  ctx.clearRect(0, 0, w, h);
+  VinylCarousel(ctx, now, dt);
+}
+
+function startVinylLoop() {
+  if (!vinyl.animating) {
+    vinyl.animating = true;
+    tickVinyl();
+  }
+}
+
+function stopVinylLoop() {
+  vinyl.animating = false;
+  cancelAnimationFrame(vinyl.animFrame);
+}
+
+function enterCarousel() {
+  vinyl.phase = VS_CAROUSEL;
+  vinyl.dragVelocity = 0;
+  vinyl.targetPosition = vinyl.position;
+  vinyl.lastFrameTime = performance.now();
+}
+
+function snapCarousel() {
+  const n = vinyl.photos.length;
+  let idx = Math.round(vinyl.position);
+  idx = clamp(idx, 0, n - 1);
+  vinyl.selectedIndex = idx;
+  vinyl.targetPosition = idx;
+}
+
+function useInertiaDrag(e, phase) {
+  if (phase === "start") {
+    vinyl.dragging = true;
+    vinyl.dragVelocity = 0;
+    vinyl.positionVelocity = 0;
+    vinyl.dragStartX = e.clientX;
+    vinyl.dragStartPosition = vinyl.position;
+    vinyl.dragLastX = e.clientX;
+    vinyl.dragLastTime = performance.now();
+    vinyl.targetPosition = vinyl.position;
+    vinylStage.setPointerCapture?.(e.pointerId);
+    return;
+  }
+  if (phase === "move") {
+    const now = performance.now();
+    const dx = e.clientX - vinyl.dragStartX;
+    const itemWidth = clamp(vinyl.w * 0.23, 78, 116);
+    const next = vinyl.dragStartPosition - dx / itemWidth;
+    vinyl.position = rubberClamp(next, 0, Math.max(vinyl.photos.length - 1, 0), 0.24);
+    const dt = Math.max(now - vinyl.dragLastTime, 8);
+    vinyl.dragVelocity = -((e.clientX - vinyl.dragLastX) / itemWidth) / (dt / 16.67);
+    vinyl.dragLastX = e.clientX;
+    vinyl.dragLastTime = now;
+    setVinylSelected(clamp(Math.round(vinyl.position), 0, Math.max(vinyl.photos.length - 1, 0)), now);
+    return;
+  }
+  if (phase === "end") {
+    vinyl.dragging = false;
+    vinyl.positionVelocity = vinyl.dragVelocity * 0.18;
+    vinyl.targetPosition = clamp(Math.round(vinyl.position + vinyl.dragVelocity * 5.5), 0, Math.max(vinyl.photos.length - 1, 0));
+  }
+}
+
+function onVinylPointerDown(e) {
+  if (vinyl.phase !== VS_CAROUSEL) return;
+  if (e.clientY < vinyl.h * 0.12) { hidePresentation(); return; }
+  e.preventDefault();
+  useInertiaDrag(e, "start");
+}
+
+function onVinylPointerMove(e) {
+  if (!vinyl.dragging) return;
+  e.preventDefault();
+  useInertiaDrag(e, "move");
+}
+
+function onVinylPointerUp(e) {
+  if (!vinyl.dragging) return;
+  e.preventDefault();
+  useInertiaDrag(e, "end");
+}
+
+function springEase(t) {
+  const x = clamp(t, 0, 1);
+  return 1 - Math.exp(-6.5 * x) * Math.cos(8.5 * x);
+}
+
+function smooth01(value) {
+  const x = clamp(value, 0, 1);
+  return x * x * (3 - 2 * x);
+}
+
+function tintHex(hex, alpha = 1, lift = 1) {
+  const rgb = parseHexColor(hex);
+  return `rgba(${Math.round(rgb.r * lift)},${Math.round(rgb.g * lift)},${Math.round(rgb.b * lift)},${alpha})`;
+}
+
+function parseHexColor(hex) {
+  const clean = String(hex || "#1f1b18").replace("#", "");
+  const value = Number.parseInt(clean.length === 3 ? clean.replace(/(.)/g, "$1$1") : clean, 16);
+  if (Number.isNaN(value)) return { r: 31, g: 27, b: 24 };
+  return {
+    r: (value >> 16) & 255,
+    g: (value >> 8) & 255,
+    b: value & 255
+  };
 }
 
 async function restoreSavedLibrary() {
