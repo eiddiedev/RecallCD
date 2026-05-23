@@ -1,7 +1,8 @@
 // B-SIDE FM – Private Music Video Radio Module
 // DeepSeek V4 powered music recommendation engine
 
-const DEEPSEEK_API_KEY = "sk-9f2bb592002d4d46a98682e8b51088af";
+import { DEEPSEEK_API_KEY } from "./config.js";
+
 const DEEPSEEK_ENDPOINT = "https://api.deepseek.com/v1/chat/completions";
 const DEEPSEEK_MODEL = "deepseek-chat";
 
