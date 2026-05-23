@@ -556,13 +556,15 @@ function tick() {
         vinyl.angle = 0;
         vinyl.thumbs = vinyl.photos.map(function(photo) {
           var c = document.createElement("canvas");
-          var size = 180;
+          var size = 260;
           var sw = photo.source.width || 480;
           var sh = photo.source.height || 640;
           var ratio = sw / sh;
           c.width = Math.max(80, Math.round(size * ratio));
           c.height = size;
           var tctx = c.getContext("2d");
+          tctx.imageSmoothingEnabled = true;
+          tctx.imageSmoothingQuality = "high";
           tctx.drawImage(photo.source, 0, 0, c.width, c.height);
           return c;
         });
@@ -1159,9 +1161,9 @@ function resizeVinyl() {
   vinylStage.style.height = h + "px";
   vinylCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   vinyl.cx = w / 2;
-  vinyl.vinylR = clamp(w * 0.86, 310, h * 0.54);
-  vinyl.cy = h + vinyl.vinylR * 0.16;
-  vinyl.ringR = vinyl.vinylR * 0.86;
+  vinyl.vinylR = clamp(w * 0.8, 292, h * 0.5);
+  vinyl.cy = h + vinyl.vinylR * 0.28;
+  vinyl.ringR = vinyl.vinylR * 0.88;
   vinyl.vinylTargetY = vinyl.cy;
 }
 
@@ -1382,8 +1384,8 @@ function drawArcThumbnail(ctx, item) {
   const angle = item.angle;
   const absOffset = Math.abs(item.offset);
   const focus = smooth01(item.focus);
-  const opacity = 0.2 + focus * 0.8;
-  const blur = (1 - focus) * 2.4;
+  const opacity = 0.34 + focus * 0.66;
+  const blur = (1 - focus) * 0.65;
   const centerTheta = angle - Math.PI / 2;
   const half = ARC_ANGLE_STEP * (0.42 + focus * 0.16);
   const outerR = vinyl.ringR + 34 + focus * 12;
@@ -1408,6 +1410,8 @@ function drawArcThumbnail(ctx, item) {
   ctx.translate(midX, midY);
   ctx.rotate(angle * 0.64);
   ctx.beginPath();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
   if (thumb) drawCoverImage(ctx, thumb, -boxW / 2, -boxH / 2, boxW, boxH);
   else {
     ctx.fillStyle = "#181512";
