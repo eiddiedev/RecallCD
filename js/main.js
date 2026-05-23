@@ -97,6 +97,7 @@ const vinyl = {
 };
 
 function setGroupOpacity(group, opacity) {
+  var meshCount = 0;
   group.traverse(function (child) {
     if (child.isMesh) {
       var mats = Array.isArray(child.material) ? child.material : [child.material];
@@ -105,8 +106,10 @@ function setGroupOpacity(group, opacity) {
         m.opacity = opacity;
         m.needsUpdate = true;
       });
+      meshCount++;
     }
   });
+  console.log("[setGroupOpacity] group.index=" + group.userData?.index, "opacity=" + opacity, "meshes=" + meshCount, "collectionId=" + (group.userData?.collectionId || "?"));
 }
 
 function makeCollection(id, title, spine, palette, photos = [], criterion = "palette") {
@@ -341,6 +344,7 @@ function seedSamples() {
         palette: { key: vs.genre, title: g.title, spine: g.spine }
       },
       videoUrl: "./assets/videos/" + vs.file,
+      coverUrl: "./assets/covers/" + vs.file.replace(/\.mp4$/, ".jpg"),
       videoAuthor: vs.author,
       videoTitle: vs.title,
       videoTags: vs.tags,
@@ -526,30 +530,54 @@ function updateTitlePlane(collection) {
 }
 
 function makeCoverTexture(collection) {
-  const canvas = document.createElement("canvas");
+  var canvas = document.createElement("canvas");
   canvas.width = 1024;
   canvas.height = 1024;
-  const c = canvas.getContext("2d");
-  const first = collection.photos[0]?.source;
-  const gradient = c.createLinearGradient(0, 0, 1024, 1024);
+  var c = canvas.getContext("2d");
+  var gradient = c.createLinearGradient(0, 0, 1024, 1024);
   gradient.addColorStop(0, collection.palette.primary);
   gradient.addColorStop(1, "#020202");
-  c.fillStyle = gradient;
-  c.fillRect(0, 0, 1024, 1024);
-  if (first) drawCoverImage(c, first, 72, 72, 880, 880);
-  const shade = c.createLinearGradient(0, 0, 1024, 1024);
+  var shade = c.createLinearGradient(0, 0, 1024, 1024);
   shade.addColorStop(0, "rgba(255,255,255,.18)");
   shade.addColorStop(0.22, "rgba(255,255,255,0)");
   shade.addColorStop(0.64, "rgba(0,0,0,.1)");
   shade.addColorStop(1, "rgba(0,0,0,.24)");
-  c.fillStyle = shade;
-  c.fillRect(0, 0, 1024, 1024);
-  c.strokeStyle = "rgba(255,255,255,.22)";
-  c.lineWidth = 8;
-  c.strokeRect(72, 72, 880, 880);
-  const texture = new THREE.CanvasTexture(canvas);
+
+  function drawCoverFrame(src) {
+    c.clearRect(0, 0, 1024, 1024);
+    c.fillStyle = gradient;
+    c.fillRect(0, 0, 1024, 1024);
+    if (src) drawCoverImage(c, src, 72, 72, 880, 880);
+    c.fillStyle = shade;
+    c.fillRect(0, 0, 1024, 1024);
+    c.strokeStyle = "rgba(255,255,255,.22)";
+    c.lineWidth = 8;
+    c.strokeRect(72, 72, 880, 880);
+  }
+
+  console.log("[makeCoverTexture] collection=" + collection.title, "coverUrl=" + (collection.photos[0]?.coverUrl || "none"), "source=" + (collection.photos[0]?.source ? "present" : "none"));
+
+  drawCoverFrame(collection.photos[0]?.source);
+
+  var coverUrl = collection.photos[0]?.coverUrl;
+  if (coverUrl) {
+    var img = new Image();
+    img.onload = function() {
+      console.log("[makeCoverTexture] cover image loaded ok:", coverUrl);
+      drawCoverFrame(img);
+      texture.needsUpdate = true;
+      console.log("[makeCoverTexture] texture.needsUpdate set to true after cover load, texture=", texture);
+    };
+    img.onerror = function(e) {
+      console.error("[makeCoverTexture] cover image FAILED to load:", coverUrl, e);
+    };
+    img.src = coverUrl;
+  }
+
+  var texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 8;
+  console.log("[makeCoverTexture] returning texture, uuid=" + texture.uuid + ", type=" + texture.constructor.name);
   return texture;
 }
 
@@ -755,6 +783,7 @@ function tick() {
     if (app.presentationPhase === "scattering") {
       app.presentationTimer += dtMs;
       if (app.presentationTimer >= SCATTER_MS) {
+        console.log("[tick] scatter complete, transitioning to presenting");
         app.presentationPhase = "presenting";
         initVinylStage();
         const collection = collections[app.selectedIndex] || collections[0];
@@ -781,6 +810,19 @@ function tick() {
           tctx.imageSmoothingQuality = "high";
           tctx.drawImage(photo.source, 0, 0, c.width, c.height);
           return c;
+        });
+        vinyl.photos.forEach(function(photo) {
+          if (photo.coverUrl && !photo._coverImg) {
+            var img = new Image();
+            img.onload = function() {
+              photo._coverImg = img;
+              console.log("[vinyl] cover loaded: " + photo.coverUrl);
+            };
+            img.onerror = function() {
+              console.error("[vinyl] cover failed: " + photo.coverUrl);
+            };
+            img.src = photo.coverUrl;
+          }
         });
         vinyl.collectionId = collection.id;
         vinyl.palette = collection.palette;
@@ -887,13 +929,14 @@ function tick() {
         var fadeT = Math.min(app.presentationTimer / SCATTER_MS, 1);
         setGroupOpacity(group, 1 - fadeT);
         group.userData._faded = true;
-        if (fadeT >= 0.98) group.visible = false;
+        if (fadeT >= 0.98) { group.visible = false; }
       } else if (group.userData._faded && app.presentationPhase !== "scattering") {
         group.visible = false;
       }
 
       if (!isAnimating) {
         if (group.userData._faded) {
+          console.log("[tick] restoring faded group idx=" + index + " to opacity 1, _faded=false");
           setGroupOpacity(group, 1);
           group.userData._faded = false;
         }
@@ -941,13 +984,17 @@ function setupEvents() {
   vinylStage.addEventListener("pointermove", onVinylPointerMove);
   vinylStage.addEventListener("pointerup", onVinylPointerUp);
   vinylStage.addEventListener("pointercancel", onVinylPointerUp);
+  vinylStage.addEventListener("click", onVinylClick);
   backBtn.addEventListener("click", () => closeDetail());
   fmBtn?.addEventListener("click", openFmEntry);
   drawerGrid.addEventListener("click", onDrawerClick);
   drawerGrid.addEventListener("mouseover", onDrawerHover);
   drawerGrid.addEventListener("mouseleave", () => updateCaption());
+  var videoEl = document.getElementById("videoEl");
   document.getElementById("videoCloseBtn").addEventListener("click", closeVideoPlayer);
-  document.getElementById("videoEl").addEventListener("click", toggleVideoPlayPause);
+  videoEl.addEventListener("click", toggleVideoPlayPause);
+  videoEl.addEventListener("touchstart", onVideoTouchStart, { passive: true });
+  videoEl.addEventListener("touchend", onVideoTouchEnd, { passive: true });
 }
 
 function openFmEntry() {
@@ -1072,6 +1119,7 @@ function updateCaption() {
 }
 
 function presentCollection(index) {
+  console.log("[presentCollection] index=" + index + ", collection=" + (collections[index]?.title || "?") + ", flippedId=" + collections[index]?.id);
   app.selectedIndex = index;
   app.targetPosition = index;
   app.flippedId = collections[index].id;
@@ -1082,6 +1130,7 @@ function presentCollection(index) {
 }
 
 function hidePresentation() {
+  console.log("[hidePresentation] called, vinyl.phase=" + vinyl.phase + ", flippedId=" + app.flippedId + ", presentationPhase=" + app.presentationPhase + ", selectedIndex=" + app.selectedIndex);
   if (vinyl.phase !== VS_HIDDEN) {
     vinyl.phase = VS_HIDDEN;
     stopVinylLoop();
@@ -1093,15 +1142,19 @@ function hidePresentation() {
   app.presentationTimer = 0;
   document.body.classList.remove("presenting");
   updateCaption();
+  console.log("[hidePresentation] done, presentationPhase now idle");
 }
 
 function restorePresentedCase() {
   const group = app.groups[app.selectedIndex];
+  console.log("[restorePresentedCase] selectedIndex=" + app.selectedIndex + ", group exists=" + !!group + ", groups.length=" + app.groups.length);
   if (!group) return;
+  console.log("[restorePresentedCase] before restore - group.visible=" + group.visible + ", group.userData._faded=" + group.userData._faded + ", rotation.y=" + group.rotation.y);
   group.rotation.y = 0;
   group.userData._faded = false;
   group.visible = true;
   setGroupOpacity(group, 1);
+  console.log("[restorePresentedCase] after restore - group.visible=" + group.visible + ", _faded=" + group.userData._faded);
 }
 
 function syncPresentationClass() {
@@ -1127,7 +1180,19 @@ function renderDrawer(index) {
     button.className = `photo-thumb${photoIndex === app.drawerPhoto ? " active" : ""}`;
     button.dataset.photoIndex = String(photoIndex);
     button.style.backgroundImage = `url("${photoToThumb(photo)}")`;
-    const label = document.createElement("span");
+    console.log("[renderDrawer] photo[" + photoIndex + "] name=" + photo.name + ", coverUrl=" + (photo.coverUrl || "none") + ", fallback set to: " + photoToThumb(photo));
+    if (photo.coverUrl) {
+      var img = new Image();
+      img.onload = function() {
+        console.log("[renderDrawer] cover loaded OK for photo[" + photoIndex + "]: " + photo.coverUrl);
+        button.style.backgroundImage = `url("${photo.coverUrl}")`;
+      };
+      img.onerror = function(e) {
+        console.error("[renderDrawer] cover FAILED for photo[" + photoIndex + "]: " + photo.coverUrl + " | error type=" + (e && e.type || "unknown"));
+      };
+      img.src = photo.coverUrl;
+    }
+    var label = document.createElement("span");
     label.textContent = getPhotoDrawerLabel(photo);
     button.append(label);
     drawerGrid.append(button);
@@ -1189,15 +1254,61 @@ function closeDetail() {
   updateCaption();
 }
 
-var currentVideo = { photo: null, playing: false };
+var currentVideo = { photo: null, playing: false, playlist: [], index: 0, swipeY: 0, swiping: false };
 
-function openVideoPlayer(photo) {
-  if (!photo || !photo.videoUrl) return;
+function buildVideoPlaylist(photo) {
+  var genre = photo.paletteKey;
+  var list = [];
+  for (var ci = 0; ci < collections.length; ci++) {
+    var c = collections[ci];
+    for (var pi = 0; pi < c.photos.length; pi++) {
+      var p = c.photos[pi];
+      if (p.paletteKey === genre && p.videoUrl) list.push(p);
+    }
+  }
+  return list;
+}
+
+function updateVideoProgress() {
+  var el = document.getElementById("videoProgress");
+  if (el && currentVideo.playlist.length > 1) {
+    el.textContent = (currentVideo.index + 1) + " / " + currentVideo.playlist.length;
+    el.style.display = "";
+  } else if (el) {
+    el.style.display = "none";
+  }
+}
+
+function switchVideo(direction) {
+  if (currentVideo.swiping) return;
+  var list = currentVideo.playlist;
+  if (list.length <= 1) return;
+  currentVideo.swiping = true;
+
+  var newIndex;
+  if (direction === "next") {
+    newIndex = (currentVideo.index + 1) % list.length;
+  } else {
+    newIndex = (currentVideo.index - 1 + list.length) % list.length;
+  }
+
+  var wrapper = document.getElementById("videoWrapper");
+  var cls = direction === "next" ? "swipe-up" : "swipe-down";
+  wrapper.classList.add(cls);
+
+  wrapper.addEventListener("transitionend", function onEnd() {
+    wrapper.removeEventListener("transitionend", onEnd);
+    applyVideoPhoto(list[newIndex], newIndex);
+    wrapper.classList.remove(cls);
+    currentVideo.swiping = false;
+  }, { once: true });
+}
+
+function applyVideoPhoto(photo, index) {
   currentVideo.photo = photo;
+  currentVideo.index = index;
 
-  var player = document.getElementById("videoPlayer");
   var videoEl = document.getElementById("videoEl");
-
   document.getElementById("videoAuthor").textContent = photo.videoAuthor || "";
   document.getElementById("videoTitle").textContent = photo.videoTitle || "";
   document.getElementById("videoMusic").textContent = photo.videoMusic || "";
@@ -1214,12 +1325,10 @@ function openVideoPlayer(photo) {
     tagsEl.appendChild(span);
   });
 
+  updateVideoProgress();
+
   videoEl.src = photo.videoUrl;
   videoEl.load();
-  player.classList.add("open");
-  hideDrawer();
-  stopVinylLoop();
-
   videoEl.addEventListener("canplay", function onReady() {
     videoEl.removeEventListener("canplay", onReady);
     videoEl.play().catch(function() {});
@@ -1227,7 +1336,35 @@ function openVideoPlayer(photo) {
   }, { once: true });
 }
 
+function onVideoTouchStart(e) {
+  if (e.touches.length !== 1) return;
+  currentVideo.swipeY = e.touches[0].clientY;
+}
+
+function onVideoTouchEnd(e) {
+  if (!currentVideo.swipeY) return;
+  var dy = (e.changedTouches[0] || {}).clientY - currentVideo.swipeY;
+  currentVideo.swipeY = 0;
+  if (dy < -60) switchVideo("next");
+  else if (dy > 60) switchVideo("prev");
+}
+
+function openVideoPlayer(photo) {
+  if (!photo || !photo.videoUrl) return;
+
+  currentVideo.playlist = buildVideoPlaylist(photo);
+  currentVideo.index = currentVideo.playlist.indexOf(photo);
+  if (currentVideo.index < 0) currentVideo.index = 0;
+
+  var player = document.getElementById("videoPlayer");
+  player.classList.add("open");
+  hideDrawer();
+  stopVinylLoop();
+  applyVideoPhoto(photo, currentVideo.index);
+}
+
 function closeVideoPlayer() {
+  console.log("[closeVideoPlayer] presentationPhase=" + app.presentationPhase + ", vinyl.phase=" + vinyl.phase + ", flippedId=" + app.flippedId + ", selectedIndex=" + app.selectedIndex);
   var player = document.getElementById("videoPlayer");
   var videoEl = document.getElementById("videoEl");
 
@@ -1239,8 +1376,10 @@ function closeVideoPlayer() {
   currentVideo.playing = false;
 
   if (app.presentationPhase === "presenting" && vinyl.phase === VS_CAROUSEL) {
+    console.log("[closeVideoPlayer] restarting vinyl loop");
     startVinylLoop();
   }
+  console.log("[closeVideoPlayer] done, presentationPhase=" + app.presentationPhase);
 }
 
 function toggleVideoPlayPause() {
@@ -1295,6 +1434,7 @@ function regroupCollections(criterion, preferredCollectionId = null, presentAfte
 }
 
 function disposeCaseGroups() {
+  console.log("[disposeCaseGroups] disposing " + app.groups.length + " groups");
   app.groups.forEach((group) => {
     app.scene.remove(group);
     group.traverse((child) => {
@@ -1302,6 +1442,7 @@ function disposeCaseGroups() {
       child.geometry?.dispose();
       const mats = Array.isArray(child.material) ? child.material : [child.material];
       mats.forEach((material) => {
+        if (material.map) console.log("[disposeCaseGroups] disposing texture map, uuid=" + material.map.uuid);
         material.map?.dispose();
         material.dispose?.();
       });
@@ -1442,7 +1583,8 @@ function PhotoPreview(ctx, now) {
   ctx.save();
   ctx.globalAlpha = 0.18;
   ctx.filter = "blur(34px)";
-  drawCoverImage(ctx, photo.source, -vinyl.w * 0.18, -vinyl.h * 0.05, vinyl.w * 1.36, topLimit * 0.9);
+  var previewSource = photo._coverImg || photo.source;
+  drawCoverImage(ctx, previewSource, -vinyl.w * 0.18, -vinyl.h * 0.05, vinyl.w * 1.36, topLimit * 0.9);
   ctx.restore();
 
   const progress = clamp((now - vinyl.previewStartedAt) / PREVIEW_TRANSITION_MS, 0, 1);
@@ -1466,8 +1608,9 @@ function drawPreviewImage(ctx, photo, areaH, alpha, scale, translateY) {
   const margin = Math.max(24, vinyl.w * 0.07);
   const maxW = vinyl.w - margin * 2;
   const maxH = Math.max(190, areaH - 78);
-  const sw = photo.source.width || 480;
-  const sh = photo.source.height || 640;
+  const src = photo._coverImg || photo.source;
+  const sw = src.width || 480;
+  const sh = src.height || 640;
   const ratio = sw / sh;
   let dw, dh;
   if (maxW / maxH > ratio) { dh = maxH; dw = dh * ratio; }
@@ -1488,7 +1631,7 @@ function drawPreviewImage(ctx, photo, areaH, alpha, scale, translateY) {
   ctx.fill();
   ctx.clip();
   ctx.filter = alpha < 0.98 ? "blur(" + ((1 - alpha) * 5).toFixed(2) + "px)" : "none";
-  drawCoverImage(ctx, photo.source, px, py, dw, dh);
+  drawCoverImage(ctx, src, px, py, dw, dh);
   ctx.restore();
 
   ctx.save();
@@ -1524,13 +1667,16 @@ function drawVinylDisc(ctx, cx, cy, r, angle, palette) {
   }
 
   const labelR = r * 0.31;
+  var wineBase = "#8b1a2b";
+  var wineLight = "#b03a4a";
+  var wineDark = "#4a0a12";
   ctx.beginPath(); ctx.arc(0, 0, labelR, 0, Math.PI * 2);
-  ctx.fillStyle = palette.primary; ctx.fill();
+  ctx.fillStyle = wineBase; ctx.fill();
   ctx.beginPath(); ctx.arc(0, 0, labelR * 0.92, 0, Math.PI * 2);
   const labelGrad = ctx.createRadialGradient(-labelR * 0.3, -labelR * 0.36, labelR * 0.08, 0, 0, labelR * 0.94);
-  labelGrad.addColorStop(0, tintHex(palette.primary, 1, 1.36));
-  labelGrad.addColorStop(0.58, palette.primary);
-  labelGrad.addColorStop(1, palette.secondary);
+  labelGrad.addColorStop(0, wineLight);
+  labelGrad.addColorStop(0.58, wineBase);
+  labelGrad.addColorStop(1, wineDark);
   ctx.fillStyle = labelGrad; ctx.fill();
   ctx.save();
   ctx.beginPath(); ctx.arc(0, 0, labelR * 0.92, 0, Math.PI * 2); ctx.clip();
@@ -1599,7 +1745,8 @@ function drawArcGuide(ctx, cx, cy, radius) {
 
 function drawArcThumbnail(ctx, item) {
   const thumb = vinyl.thumbs[item.i];
-  const photoSource = vinyl.photos[item.i]?.source || thumb;
+  const photo = vinyl.photos[item.i];
+  const photoSource = (photo && photo._coverImg) || (photo && photo.source) || thumb;
   const angle = item.angle;
   const absOffset = Math.abs(item.offset);
   const focus = smooth01(item.focus);
@@ -1794,7 +1941,20 @@ function onVinylPointerUp(e) {
     var photo = vinyl.photos[vinyl.selectedIndex];
     if (photo && photo.videoUrl) {
       openVideoPlayer(photo);
+      vinyl._lastVideoOpen = performance.now();
     }
+  }
+}
+
+function onVinylClick(e) {
+  if (vinyl.phase !== VS_CAROUSEL) return;
+  if (e.clientY < vinyl.h * 0.12) return;
+  var now = performance.now();
+  if (now - (vinyl._lastVideoOpen || 0) < 500) return;
+  var photo = vinyl.photos[vinyl.selectedIndex];
+  if (photo && photo.videoUrl) {
+    console.log("[onVinylClick] opening video for", photo.name);
+    openVideoPlayer(photo);
   }
 }
 

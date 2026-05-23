@@ -352,6 +352,33 @@
       object-fit: contain;
       background: #000;
     }
+    .video-wrapper {
+      position: absolute;
+      inset: 0;
+      transition: transform .2s ease, opacity .2s ease;
+    }
+    .video-wrapper.swipe-up {
+      transform: translateY(-100%);
+      opacity: 0;
+    }
+    .video-wrapper.swipe-down {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+    .video-progress {
+      position: absolute;
+      top: 18px;
+      right: 18px;
+      z-index: 3;
+      padding: 4px 12px;
+      border-radius: 999px;
+      background: rgba(0,0,0,.52);
+      color: rgba(255,247,234,.78);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .04em;
+      pointer-events: none;
+    }
     .video-meta {
       position: absolute;
       left: 0;
@@ -461,7 +488,10 @@
   </section>
   <section id="videoPlayer" class="video-player" aria-label="视频播放器">
     <button id="videoCloseBtn" class="back-btn" type="button" aria-label="关闭视频">&#10005;</button>
-    <video id="videoEl" playsinline webkit-playsinline x5-video-player-type="h5" x5-video-orientation="portrait" preload="auto"></video>
+    <span id="videoProgress" class="video-progress"></span>
+    <div id="videoWrapper" class="video-wrapper">
+      <video id="videoEl" playsinline webkit-playsinline x5-video-player-type="h5" x5-video-orientation="portrait" preload="auto"></video>
+    </div>
     <div class="video-meta">
       <strong id="videoAuthor"></strong>
       <p id="videoTitle"></p>
