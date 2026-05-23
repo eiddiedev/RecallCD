@@ -59,6 +59,55 @@
       display: none;
     }
     #vinylStage.active { display: block; }
+    .detail-entry-btn {
+      position: fixed;
+      top: 8%;
+      right: 7%;
+      z-index: 4;
+      pointer-events: auto;
+      padding: 7px 14px;
+      border: 1px solid rgba(255,255,255,.22);
+      border-radius: 20px;
+      background: rgba(255,255,255,.18);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      color: #f4efe8;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .03em;
+      cursor: pointer;
+      display: none;
+      transition: opacity .25s ease, transform .18s ease, background .2s;
+    }
+    .detail-entry-btn.show { display: block; }
+    .detail-entry-btn:active {
+      transform: scale(.92);
+      background: rgba(255,255,255,.28);
+    }
+    #inlineVideo {
+      position: fixed;
+      z-index: 4;
+      display: none;
+      object-fit: cover;
+      border-radius: 10px;
+      background: #000;
+      pointer-events: auto;
+    }
+    #inlineVideo.show { display: block; }
+    .play-indicator {
+      position: fixed;
+      z-index: 5;
+      display: none;
+      pointer-events: none;
+      width: 0;
+      height: 0;
+      border-left: 18px solid rgba(255,255,255,.88);
+      border-top: 11px solid transparent;
+      border-bottom: 11px solid transparent;
+      filter: drop-shadow(0 2px 8px rgba(0,0,0,.45));
+      transform: translate(-50%, -50%);
+    }
+    .play-indicator.show { display: block; }
     #hud, #detail {
       position: fixed;
       inset: 0;
@@ -932,16 +981,13 @@
     .video-tags {
       display: flex;
       flex-wrap: wrap;
-      gap: 6px;
+      gap: 8px;
       margin-top: 8px;
     }
     .video-tags span {
-      font-size: 10px;
-      font-weight: 800;
-      padding: 2px 10px;
-      border-radius: 4px;
-      background: rgba(255,255,255,.14);
-      color: #eee;
+      font-size: 11px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.65);
     }
     .video-engagement {
       display: flex;
@@ -975,6 +1021,9 @@
   <canvas id="bgNoise" aria-hidden="true"></canvas>
   <canvas id="scene" aria-label="3D 音乐视频 CD 架"></canvas>
   <canvas id="vinylStage"></canvas>
+  <button id="detailEntryBtn" class="detail-entry-btn" type="button">查看详情 →</button>
+  <video id="inlineVideo" playsinline webkit-playsinline x5-video-player-type="h5" preload="auto"></video>
+  <div id="playIndicator" class="play-indicator"></div>
   <div id="hud">
     <div class="brand">
       <small>MUSIC VIDEO COMPANION</small>

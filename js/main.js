@@ -94,7 +94,10 @@ const vinyl = {
   animFrame: 0,
   lastFrameTime: 0,
   collectionId: null,
-  palette: null
+  palette: null,
+  tonearmLift: 0,
+  tonearmTargetLift: 0,
+  tonearmLiftVel: 0
 };
 
 function setGroupOpacity(group, opacity) {
@@ -1077,6 +1080,12 @@ function setupEvents() {
   vinylStage.addEventListener("pointerup", onVinylPointerUp);
   vinylStage.addEventListener("pointercancel", onVinylPointerUp);
   vinylStage.addEventListener("click", onVinylClick);
+  var detailEntryBtn = document.getElementById("detailEntryBtn");
+  detailEntryBtn.addEventListener("click", function(e) {
+    e.stopPropagation();
+    var photo = vinyl.photos[vinyl.selectedIndex];
+    if (photo && photo.videoUrl) openVideoPlayer(photo);
+  });
   backBtn.addEventListener("click", () => closeDetail());
   detail.addEventListener("click", function(e) {
     if (e.target === detailCanvas) {
@@ -1101,6 +1110,19 @@ function setupEvents() {
   videoEl.addEventListener("click", toggleVideoPlayPause);
   videoEl.addEventListener("touchstart", onVideoTouchStart, { passive: true });
   videoEl.addEventListener("touchend", onVideoTouchEnd, { passive: true });
+  var inlineVideo = document.getElementById("inlineVideo");
+  inlineVideo.addEventListener("click", function(e) {
+    e.stopPropagation();
+    if (inlineVideo.paused) {
+      inlineVideo.play().catch(function() {});
+      hidePlayIndicator();
+      vinyl.tonearmTargetLift = 0;
+    } else {
+      inlineVideo.pause();
+      showPlayIndicator();
+      triggerTonearmLift();
+    }
+  });
 
   function showToast(text) {
     var toast = document.getElementById("classifyToast");
@@ -1374,6 +1396,10 @@ function hidePresentation() {
     vinyl.phase = VS_HIDDEN;
     stopVinylLoop();
     vinylStage.classList.remove("active");
+    stopInlineVideo();
+    hidePlayIndicator();
+    var btn = document.getElementById("detailEntryBtn");
+    if (btn) btn.classList.remove("show");
   }
   clearTimeout(app.presentationTimeout);
   app.presentationTimeout = 0;
@@ -1608,6 +1634,10 @@ function openVideoPlayer(photo) {
   player.classList.add("open");
   hideDrawer();
   stopVinylLoop();
+  stopInlineVideo();
+  hidePlayIndicator();
+  var btn = document.getElementById("detailEntryBtn");
+  if (btn) btn.classList.remove("show");
   applyVideoPhoto(photo, currentVideo.index);
 }
 
@@ -1626,6 +1656,12 @@ function closeVideoPlayer() {
   if (app.presentationPhase === "presenting" && vinyl.phase === VS_CAROUSEL) {
     console.log("[closeVideoPlayer] restarting vinyl loop");
     startVinylLoop();
+    var btn = document.getElementById("detailEntryBtn");
+    var photo = vinyl.photos[vinyl.selectedIndex];
+    if (btn && photo && photo.videoUrl) {
+      btn.classList.add("show");
+      showPlayIndicator();
+    }
   }
   console.log("[closeVideoPlayer] done, presentationPhase=" + app.presentationPhase);
 }
@@ -1640,6 +1676,75 @@ function toggleVideoPlayPause() {
     videoEl.pause();
     currentVideo.playing = false;
   }
+}
+
+function syncInlineVideo() {
+  var el = document.getElementById("inlineVideo");
+  if (!el || !vinyl._previewRect || !el.classList.contains("show")) return;
+  var r = vinyl._previewRect;
+  el.style.left = r.x + "px";
+  el.style.top = r.y + "px";
+  el.style.width = r.w + "px";
+  el.style.height = r.h + "px";
+}
+
+function syncPlayIndicator() {
+  var el = document.getElementById("playIndicator");
+  if (!el || !vinyl._previewRect || !el.classList.contains("show")) return;
+  var r = vinyl._previewRect;
+  el.style.left = (r.x + r.w / 2) + "px";
+  el.style.top = (r.y + r.h / 2) + "px";
+}
+
+function showPlayIndicator() {
+  var el = document.getElementById("playIndicator");
+  if (!el) return;
+  var photo = vinyl.photos[vinyl.selectedIndex];
+  if (!photo || !photo.videoUrl) return;
+  var inlineVid = document.getElementById("inlineVideo");
+  if (inlineVid && inlineVid.classList.contains("show") && !inlineVid.paused) return;
+  syncPlayIndicator();
+  el.classList.add("show");
+}
+
+function hidePlayIndicator() {
+  var el = document.getElementById("playIndicator");
+  if (el) el.classList.remove("show");
+}
+
+function playInlineVideo(photo) {
+  if (!photo || !photo.videoUrl) return;
+  var el = document.getElementById("inlineVideo");
+  if (!el) return;
+  if (el.src && !el.paused) {
+    el.pause();
+    showPlayIndicator();
+    triggerTonearmLift();
+    return;
+  }
+  if (el.src) {
+    el.play().catch(function() {});
+    hidePlayIndicator();
+    vinyl.tonearmTargetLift = 0;
+    return;
+  }
+  syncInlineVideo();
+  el.src = photo.videoUrl;
+  el.classList.add("show");
+  hidePlayIndicator();
+  vinyl.tonearmTargetLift = 0;
+  el.play().catch(function() {});
+}
+
+function stopInlineVideo() {
+  var el = document.getElementById("inlineVideo");
+  if (!el) return;
+  el.pause();
+  el.removeAttribute("src");
+  el.load();
+  el.classList.remove("show");
+  showPlayIndicator();
+  triggerTonearmLift();
 }
 
 function buildCollections(criterion) {
@@ -1769,12 +1874,14 @@ function resizeVinyl() {
   vinyl.cy = h + vinyl.vinylR * 0.28;
   vinyl.ringR = vinyl.vinylR * 0.88;
   vinyl.vinylTargetY = vinyl.cy;
+  vinyl.dpr = dpr;
 }
 
 function VinylCarousel(ctx, now, dt) {
   updateVinylMotion(dt, now);
   PhotoPreview(ctx, now);
-  drawVinylDisc(ctx, vinyl.cx, vinyl.vinylY, vinyl.vinylR, vinyl.angle, vinyl.palette || { primary: "#c74731", secondary: "#1c0c08", text: "#fff0c8" });
+  drawVinylDisc(ctx, vinyl.cx, vinyl.vinylY, vinyl.vinylR, vinyl.angle, vinyl.palette || { primary: "#c74731", secondary: "#1c0c08", text: "#fff0c8" }, vinyl.collectionId);
+  drawTonearm(ctx);
   ArcWheel(ctx);
   drawVinylChrome(ctx);
 }
@@ -1805,6 +1912,15 @@ function updateVinylMotion(dt, now) {
   vinyl.position = clamp(vinyl.position, 0, maxPosition);
   vinyl.angle = -vinyl.position * ARC_ANGLE_STEP;
   setVinylSelected(clamp(Math.round(vinyl.position), 0, maxPosition), now);
+
+  var liftPull = vinyl.tonearmTargetLift - vinyl.tonearmLift;
+  vinyl.tonearmLiftVel += liftPull * 0.12 * dt;
+  vinyl.tonearmLiftVel *= Math.pow(0.55, dt);
+  vinyl.tonearmLift += vinyl.tonearmLiftVel * dt;
+  if (Math.abs(liftPull) < 0.05 && Math.abs(vinyl.tonearmLiftVel) < 0.05) {
+    vinyl.tonearmLift = vinyl.tonearmTargetLift;
+    vinyl.tonearmLiftVel = 0;
+  }
 }
 
 function setVinylSelected(index, now) {
@@ -1813,6 +1929,13 @@ function setVinylSelected(index, now) {
   vinyl.previousIndex = vinyl.selectedIndex;
   vinyl.selectedIndex = index;
   vinyl.previewStartedAt = now;
+  stopInlineVideo();
+  var btn = document.getElementById("detailEntryBtn");
+  if (btn && vinyl.phase === VS_CAROUSEL) {
+    var photo = vinyl.photos[index];
+    if (photo && photo.videoUrl) btn.classList.add("show");
+    else btn.classList.remove("show");
+  }
 }
 
 function PhotoPreview(ctx, now) {
@@ -1845,12 +1968,38 @@ function PhotoPreview(ctx, now) {
   ctx.fillStyle = "rgba(255,248,232,.72)";
   ctx.font = "800 11px Arial, PingFang SC, sans-serif";
   ctx.textAlign = "center";
+  var counterY = Math.min(vinyl.h - 126, topLimit + 26);
   ctx.fillText(
     String(vinyl.selectedIndex + 1).padStart(2, "0") + " / " + String(vinyl.photos.length).padStart(2, "0"),
     vinyl.w / 2,
-    Math.min(vinyl.h - 126, topLimit + 26)
+    counterY
   );
   ctx.restore();
+
+  var tags = photo.videoTags || [];
+  if (tags.length > 0) {
+    ctx.save();
+    ctx.globalAlpha = clamp(ease, 0, 1);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    ctx.font = "11px Arial, PingFang SC, sans-serif";
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    var tagY = counterY - 10;
+    var maxW = vinyl.w - 48;
+    var tagLine = tags.join("  ");
+    var metrics = ctx.measureText(tagLine);
+    if (metrics.width > maxW) {
+      var trimmed = "";
+      for (var ti = 0; ti < tags.length; ti++) {
+        var test = trimmed ? trimmed + "  " + tags[ti] : tags[ti];
+        if (ctx.measureText(test).width > maxW) break;
+        trimmed = test;
+      }
+      tagLine = trimmed;
+    }
+    ctx.fillText(tagLine, vinyl.w / 2, tagY);
+    ctx.restore();
+  }
 }
 
 function drawPreviewImage(ctx, photo, areaH, alpha, scale, translateY) {
@@ -1868,6 +2017,10 @@ function drawPreviewImage(ctx, photo, areaH, alpha, scale, translateY) {
   dh *= scale;
   const px = (vinyl.w - dw) / 2;
   const py = Math.max(54, (areaH - dh) / 2) + translateY;
+
+  if (alpha > 0.5) {
+    vinyl._previewRect = { x: px, y: py, w: dw, h: dh };
+  }
 
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -1891,9 +2044,35 @@ function drawPreviewImage(ctx, photo, areaH, alpha, scale, translateY) {
   roundRect(ctx, px, py, dw, dh, 10);
   ctx.stroke();
   ctx.restore();
+
+  if (photo && alpha > 0.85) {
+    var captionH = Math.max(28, dh * 0.13);
+    var captionY = py + dh - captionH;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    roundRect(ctx, px, captionY, dw, captionH, 0);
+    ctx.clip();
+    var capGrad = ctx.createLinearGradient(0, captionY, 0, py + dh);
+    capGrad.addColorStop(0, "rgba(0,0,0,0)");
+    capGrad.addColorStop(1, "rgba(0,0,0,.68)");
+    ctx.fillStyle = capGrad;
+    ctx.fillRect(px, captionY, dw, captionH);
+    ctx.fillStyle = "#fff";
+    ctx.shadowColor = "rgba(0,0,0,.8)";
+    ctx.shadowBlur = 3;
+    ctx.font = "700 " + Math.max(9, captionH * 0.35) + "px Arial, PingFang SC, sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "bottom";
+    ctx.fillText(truncateText(photo.videoAuthor || "", 16), px + 8, py + dh - 6);
+    var likesText = (photo.videoLikes || "0") + " 赞";
+    ctx.textAlign = "right";
+    ctx.fillText(likesText, px + dw - 8, py + dh - 6);
+    ctx.restore();
+  }
 }
 
-function drawVinylDisc(ctx, cx, cy, r, angle, palette) {
+function drawVinylDisc(ctx, cx, cy, r, angle, palette, collectionId) {
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(angle * 0.24);
@@ -1916,16 +2095,13 @@ function drawVinylDisc(ctx, cx, cy, r, angle, palette) {
   }
 
   const labelR = r * 0.31;
-  var wineBase = "#8b1a2b";
-  var wineLight = "#b03a4a";
-  var wineDark = "#4a0a12";
   ctx.beginPath(); ctx.arc(0, 0, labelR, 0, Math.PI * 2);
-  ctx.fillStyle = wineBase; ctx.fill();
+  ctx.fillStyle = palette.primary; ctx.fill();
   ctx.beginPath(); ctx.arc(0, 0, labelR * 0.92, 0, Math.PI * 2);
   const labelGrad = ctx.createRadialGradient(-labelR * 0.3, -labelR * 0.36, labelR * 0.08, 0, 0, labelR * 0.94);
-  labelGrad.addColorStop(0, wineLight);
-  labelGrad.addColorStop(0.58, wineBase);
-  labelGrad.addColorStop(1, wineDark);
+  labelGrad.addColorStop(0, tintHex(palette.primary, 1, 1.36));
+  labelGrad.addColorStop(0.58, palette.primary);
+  labelGrad.addColorStop(1, palette.secondary);
   ctx.fillStyle = labelGrad; ctx.fill();
   ctx.save();
   ctx.beginPath(); ctx.arc(0, 0, labelR * 0.92, 0, Math.PI * 2); ctx.clip();
@@ -1938,8 +2114,22 @@ function drawVinylDisc(ctx, cx, cy, r, angle, palette) {
   ctx.fillText("MUSIC 2026", 0, labelR * 0.28);
   ctx.restore();
 
-  ctx.beginPath(); ctx.arc(0, 0, r * 0.045, 0, Math.PI * 2);
-  ctx.fillStyle = "#020202"; ctx.fill();
+  var genreRingColors = {
+    "jazz": "#c8922a",
+    "hiphop": "#e8e4dc",
+    "rnb": "#9c6fd6",
+    "electronic": "#4fc3f7",
+    "folk": "#8b6f47",
+    "cinematic": "#78909c"
+  };
+  var col = collections.find(function(c) { return c.id === collectionId; });
+  var genreKey = col ? col.id : "";
+  var ringColor = genreRingColors[genreKey] || "#8b1a2b";
+  var ringR = labelR * 1.0;
+  ctx.beginPath(); ctx.arc(0, 0, ringR, 0, Math.PI * 2);
+  ctx.strokeStyle = ringColor;
+  ctx.lineWidth = 6;
+  ctx.stroke();
 
   const shine = ctx.createLinearGradient(-r * 0.72, -r * 0.78, r * 0.75, r * 0.3);
   shine.addColorStop(0, "rgba(255,255,255,0)");
@@ -1949,6 +2139,118 @@ function drawVinylDisc(ctx, cx, cy, r, angle, palette) {
   shine.addColorStop(1, "rgba(255,255,255,0)");
   ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2);
   ctx.fillStyle = shine; ctx.fill();
+  ctx.restore();
+}
+
+function triggerTonearmLift() {
+  vinyl.tonearmTargetLift = -12;
+  clearTimeout(vinyl._tonearmTimer);
+  vinyl._tonearmTimer = setTimeout(function() {
+    vinyl.tonearmTargetLift = 0;
+  }, 300);
+}
+
+function drawTonearm(ctx) {
+  var discCX = vinyl.cx;
+  var discCY = vinyl.vinylY;
+  var ringR = vinyl.vinylR * 0.31;
+  var lift = vinyl.tonearmLift || 0;
+
+  var pivotX = vinyl.w * 0.84;
+  var pivotY = discCY - vinyl.vinylR * 0.58;
+
+  var dx = discCX - pivotX;
+  var dy = discCY - pivotY;
+  var dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist < 1) return;
+
+  var stylusX = discCX - (dx / dist) * ringR;
+  var stylusY = discCY - (dy / dist) * ringR + lift;
+
+  var ux = dx / dist;
+  var uy = dy / dist;
+
+  ctx.save();
+
+  // Pivot base shadow
+  ctx.beginPath();
+  ctx.arc(pivotX, pivotY + 1, 8, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(0,0,0,.35)";
+  ctx.fill();
+
+  // Pivot base
+  var baseGrad = ctx.createRadialGradient(pivotX - 2, pivotY - 2, 1, pivotX, pivotY, 8);
+  baseGrad.addColorStop(0, "#4a4a4a");
+  baseGrad.addColorStop(1, "#222");
+  ctx.beginPath();
+  ctx.arc(pivotX, pivotY, 8, 0, Math.PI * 2);
+  ctx.fillStyle = baseGrad;
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,.22)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Inner pivot screw
+  ctx.beginPath();
+  ctx.arc(pivotX, pivotY, 3, 0, Math.PI * 2);
+  ctx.fillStyle = "#666";
+  ctx.fill();
+  ctx.strokeStyle = "rgba(0,0,0,.3)";
+  ctx.lineWidth = 0.6;
+  ctx.stroke();
+
+  // Tonearm shadow
+  ctx.beginPath();
+  ctx.moveTo(pivotX, pivotY + 2);
+  ctx.lineTo(stylusX, stylusY + 2);
+  ctx.strokeStyle = "rgba(0,0,0,.18)";
+  ctx.lineWidth = 4;
+  ctx.stroke();
+
+  // Tonearm rod with metallic gradient
+  ctx.beginPath();
+  ctx.moveTo(pivotX, pivotY);
+  ctx.lineTo(stylusX, stylusY);
+  var armGrad = ctx.createLinearGradient(pivotX, pivotY, stylusX, stylusY);
+  armGrad.addColorStop(0, "#d8d8d8");
+  armGrad.addColorStop(0.25, "#eaeaec");
+  armGrad.addColorStop(0.5, "#c0c0c0");
+  armGrad.addColorStop(0.75, "#d4d4d4");
+  armGrad.addColorStop(1, "#a8a8a8");
+  ctx.strokeStyle = armGrad;
+  ctx.lineWidth = 3.2;
+  ctx.shadowColor = "rgba(0,0,0,.25)";
+  ctx.shadowBlur = 3;
+  ctx.stroke();
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0;
+
+  // Stylus head housing
+  var hx = stylusX + ux * 8;
+  var hy = stylusY + uy * 8;
+  ctx.beginPath();
+  ctx.moveTo(stylusX, stylusY);
+  ctx.lineTo(hx, hy);
+  ctx.strokeStyle = "#b8b8b8";
+  ctx.lineWidth = 2.2;
+  ctx.stroke();
+
+  // Stylus cantilever
+  var sx = hx + ux * 4;
+  var sy = hy + uy * 4;
+  ctx.beginPath();
+  ctx.moveTo(hx, hy);
+  ctx.lineTo(sx, sy);
+  ctx.strokeStyle = "#999";
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  // Stylus tip
+  ctx.beginPath();
+  ctx.arc(sx, sy, 1, 0, Math.PI * 2);
+  ctx.fillStyle = "#777";
+  ctx.fill();
+
   ctx.restore();
 }
 
@@ -2040,6 +2342,7 @@ function drawArcThumbnail(ctx, item) {
   drawArcSlicePath(ctx, vinyl.cx, vinyl.vinylY, innerR, outerR, thetaA, thetaB);
   ctx.stroke();
   ctx.restore();
+
 }
 
 function drawArcSlicePath(ctx, cx, cy, innerR, outerR, thetaA, thetaB) {
@@ -2097,6 +2400,8 @@ function tickVinyl() {
 
   ctx.clearRect(0, 0, w, h);
   VinylCarousel(ctx, now, dt);
+  syncInlineVideo();
+  syncPlayIndicator();
 }
 
 function startVinylLoop() {
@@ -2116,6 +2421,12 @@ function enterCarousel() {
   vinyl.dragVelocity = 0;
   vinyl.targetPosition = vinyl.position;
   vinyl.lastFrameTime = performance.now();
+  var photo = vinyl.photos[vinyl.selectedIndex];
+  var btn = document.getElementById("detailEntryBtn");
+  if (btn && photo && photo.videoUrl) {
+    btn.classList.add("show");
+    showPlayIndicator();
+  }
 }
 
 function snapCarousel() {
@@ -2189,7 +2500,7 @@ function onVinylPointerUp(e) {
   if (!vinyl._tapMoved && dt < 400) {
     var photo = vinyl.photos[vinyl.selectedIndex];
     if (photo && photo.videoUrl) {
-      openVideoPlayer(photo);
+      playInlineVideo(photo);
       vinyl._lastVideoOpen = performance.now();
     }
   }
@@ -2202,8 +2513,8 @@ function onVinylClick(e) {
   if (now - (vinyl._lastVideoOpen || 0) < 500) return;
   var photo = vinyl.photos[vinyl.selectedIndex];
   if (photo && photo.videoUrl) {
-    console.log("[onVinylClick] opening video for", photo.name);
-    openVideoPlayer(photo);
+    console.log("[onVinylClick] playing inline video for", photo.name);
+    playInlineVideo(photo);
   }
 }
 
