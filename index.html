@@ -39,7 +39,7 @@
       height: 100svh;
       pointer-events: none;
     }
-    #bgVideo {
+    #bgImage {
       position: fixed;
       inset: 0;
       z-index: 0;
@@ -47,7 +47,7 @@
       height: 100svh;
       object-fit: cover;
       pointer-events: none;
-      opacity: 0.72;
+      opacity: 0.94;
     }
     #vinylStage {
       position: fixed;
@@ -95,7 +95,7 @@
       letter-spacing: 0;
     }
     .brand p { display: none; }
-    .import-btn, .delete-cd-btn, .back-btn {
+    .back-btn {
       pointer-events: auto;
       border: 0;
       border-radius: 999px;
@@ -104,32 +104,6 @@
       font: 800 13px Arial, "PingFang SC", sans-serif;
       min-height: 38px;
       padding: 0 18px;
-    }
-    .import-btn {
-      position: absolute;
-      top: 48px;
-      right: 22px;
-      z-index: 2;
-    }
-    .delete-cd-btn {
-      position: absolute;
-      top: 70px;
-      right: 22px;
-      z-index: 2;
-      min-height: 34px;
-      padding: 0 14px;
-      color: rgba(244,239,232,.82);
-      background: rgba(18,14,11,.5);
-      border: 1px solid rgba(244,239,232,.2);
-      backdrop-filter: blur(10px);
-      display: none;
-    }
-    .delete-cd-btn.show { display: inline-block; }
-    body.presenting .delete-cd-btn { display: inline-block; }
-    .import-btn:active {
-      transform: scale(0.93);
-      opacity: 0.82;
-      transition: transform 0.08s ease, opacity 0.08s ease;
     }
     .caption {
       position: absolute;
@@ -277,168 +251,8 @@
     .photo-thumb.active {
       box-shadow: inset 0 0 0 3px #17120e, 0 12px 30px rgba(23,18,14,.22);
     }
-    .modal {
-      position: fixed;
-      inset: 0;
-      z-index: 8;
-      display: none;
-      place-items: end center;
-      padding: 18px;
-      background: rgba(0,0,0,.58);
-      pointer-events: auto;
-    }
-    .modal.open { display: grid; }
-    .import-panel {
-      width: min(100%, 430px);
-      padding: 24px;
-      color: #18120e;
-      background: rgba(247,239,225,.98);
-      border-radius: 24px;
-      box-shadow: 0 24px 80px rgba(0,0,0,.46);
-    }
-    .import-panel h2 {
-      margin: 0 0 16px;
-      font-family: Impact, "Arial Black", Arial, sans-serif;
-      font-size: 38px;
-      line-height: .9;
-      letter-spacing: 0;
-    }
-    .panel-actions {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 10px;
-    }
-    .panel-actions button {
-      border: 0;
-      min-height: 42px;
-      border-radius: 999px;
-      font: 900 13px Arial, "PingFang SC", sans-serif;
-    }
-    .choose-files {
-      color: #fff8ec;
-      background: #18120e;
-    }
-    .cancel-panel {
-      color: rgba(24,18,14,.64);
-      background: rgba(24,18,14,.08);
-      padding: 0 18px;
-    }
-    .tab-bar {
-      position: fixed;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      z-index: 4;
-      display: flex;
-      justify-content: center;
-      gap: 0;
-      padding: 0 16px calc(10px + env(safe-area-inset-bottom)) 16px;
-      pointer-events: auto;
-    }
-    .tab-bar button {
-      flex: 1;
-      max-width: 160px;
-      border: 0;
-      padding: 10px 0 8px;
-      color: rgba(244,239,232,.45);
-      background: transparent;
-      font: 800 13px Arial, "PingFang SC", sans-serif;
-      letter-spacing: .06em;
-      text-transform: uppercase;
-      text-align: center;
-      transition: color .32s;
-    }
-    .tab-bar button.active {
-      color: #f4efe8;
-    }
-    .tab-indicator {
-      position: absolute;
-      bottom: 2px;
-      height: 2.5px;
-      border-radius: 2px;
-      background: #f4efe8;
-      transition: left .32s cubic-bezier(.4,.0,.2,1), width .32s cubic-bezier(.4,.0,.2,1);
-      pointer-events: none;
-    }
-    .assign-location-btn {
-      pointer-events: auto;
-      border: 0;
-      border-radius: 999px;
-      background: rgba(244,239,232,.94);
-      color: #15110e;
-      font: 800 13px Arial, "PingFang SC", sans-serif;
-      min-height: 38px;
-      padding: 0 18px;
-      display: none;
-    }
-    .assign-location-btn.show { display: inline-block; }
-    .photo-thumb.selected::before {
-      content: "✓";
-      position: absolute;
-      top: 6px;
-      right: 6px;
-      z-index: 2;
-      width: 22px;
-      height: 22px;
-      border-radius: 50%;
-      background: #18120e;
-      color: #fff8ec;
-      font-size: 13px;
-      font-weight: 900;
-      display: grid;
-      place-items: center;
-    }
-    .location-panel {
-      width: min(100%, 400px);
-      padding: 24px;
-      color: #18120e;
-      background: rgba(247,239,225,.98);
-      border-radius: 24px;
-      box-shadow: 0 24px 80px rgba(0,0,0,.46);
-    }
-    .location-panel h2 {
-      margin: 0 0 18px;
-      font-family: Impact, "Arial Black", Arial, sans-serif;
-      font-size: 34px;
-      line-height: .9;
-      letter-spacing: 0;
-    }
-    .location-panel input {
-      width: 100%;
-      border: 2px solid rgba(24,18,14,.15);
-      border-radius: 14px;
-      padding: 12px 16px;
-      font: 600 15px Arial, "PingFang SC", sans-serif;
-      color: #18120e;
-      background: #fff;
-      outline: none;
-      margin-bottom: 16px;
-    }
-    .location-panel input:focus {
-      border-color: #18120e;
-    }
-    .location-actions {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 10px;
-    }
-    .location-actions button {
-      border: 0;
-      min-height: 42px;
-      border-radius: 999px;
-      font: 900 13px Arial, "PingFang SC", sans-serif;
-    }
-    .save-location-btn {
-      color: #fff8ec;
-      background: #18120e;
-    }
-    .cancel-location-btn {
-      color: rgba(24,18,14,.64);
-      background: rgba(24,18,14,.08);
-      padding: 0 18px;
-    }
     @media (orientation: landscape) {
-      .album-title-layer, .photo-drawer, .tab-bar, .assign-location-btn { display: none; }
+      .album-title-layer, .photo-drawer { display: none; }
     }
     #detail {
       display: none;
@@ -461,15 +275,6 @@
       color: #fff7ea;
       border: 1px solid rgba(255,255,255,.18);
     }
-    .hidden-file {
-      position: fixed;
-      left: -9999px;
-      top: -9999px;
-      width: 1px;
-      height: 1px;
-      opacity: 0;
-      pointer-events: none;
-    }
     .error {
       position: fixed;
       inset: 0;
@@ -486,13 +291,11 @@
   </style>
 </head>
 <body>
-  <video id="bgVideo" src="./背景素材-无声.mp4" muted autoplay loop playsinline webkit-playsinline x5-video-player-type="h5" x5-video-player-fullscreen="false" preload="auto"></video>
+  <img id="bgImage" src="./images/black-wallpaper.jpeg" alt="" aria-hidden="true">
   <canvas id="bgNoise" aria-hidden="true"></canvas>
   <canvas id="scene" aria-label="3D 照片 CD 档案架"></canvas>
   <canvas id="vinylStage"></canvas>
   <div id="hud">
-    <button id="importBtn" class="import-btn" type="button">导入照片</button>
-    <button id="deleteCdBtn" class="delete-cd-btn" type="button">删除CD</button>
     <div class="brand">
       <small>MEMORY DISC</small>
       <h1>记忆CD</h1>
@@ -511,28 +314,10 @@
     </div>
     <div id="drawerGrid" class="drawer-grid"></div>
   </section>
-  <nav id="tabBar" class="tab-bar" role="tablist" aria-label="分类切换">
-    <button type="button" role="tab" class="active" data-tab="palette">Color</button>
-    <button type="button" role="tab" data-tab="location">Place</button>
-    <button type="button" role="tab" data-tab="time">Time</button>
-    <span id="tabIndicator" class="tab-indicator"></span>
-  </nav>
-  <button id="assignLocationBtn" class="assign-location-btn" type="button">设置地点</button>
-  <section id="locationModal" class="modal" aria-label="设置地点">
-    <div class="location-panel">
-      <h2>设置地点</h2>
-      <input id="locationInput" type="text" placeholder="输入地点名称，如：北京" autocomplete="off">
-      <div class="location-actions">
-        <button id="saveLocationBtn" class="save-location-btn" type="button">确定</button>
-        <button id="cancelLocationBtn" class="cancel-location-btn" type="button">取消</button>
-      </div>
-    </div>
-  </section>
   <section id="detail" aria-label="照片详情">
     <button id="backBtn" class="back-btn" type="button">返回</button>
     <canvas id="detailCanvas"></canvas>
   </section>
-  <input id="filePicker" class="hidden-file" type="file" accept="image/*,.heic,.heif,image/heic,image/heif" multiple>
   <div id="error" class="error">哎呀，出错了，请重启试试吧~</div>
   <script type="module" src="./js/main.js"></script>
   <script>(function() {

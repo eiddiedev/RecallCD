@@ -1,25 +1,17 @@
 import * as THREE from "./three.module.min.js";
-import { heicTo, isHeic } from "./heic-to.local.js";
 import {
-  analyzePalette,
   classifyPhoto,
-  getCriterionLabel,
-  makeAdaptivePalette,
-  parsePhotoMetadata
+  makeAdaptivePalette
 } from "./classifier.js";
 
 const ERROR_TEXT = "哎呀，出错了，请重启试试吧~";
-const IMPORT_UNREADABLE_TEXT = "这批照片暂时无法读取，请换一张或转成 JPG/PNG 再试试";
 const STORAGE_KEY = "recallcd.userLibrary.v1";
 const DB_NAME = "recallcd-library";
 const DB_STORE = "library";
 const sceneCanvas = document.getElementById("scene");
 const detail = document.getElementById("detail");
 const detailCanvas = document.getElementById("detailCanvas");
-const importBtn = document.getElementById("importBtn");
-const deleteCdBtn = document.getElementById("deleteCdBtn");
 const backBtn = document.getElementById("backBtn");
-const filePicker = document.getElementById("filePicker");
 const errorEl = document.getElementById("error");
 const captionTitle = document.getElementById("captionTitle");
 const captionMeta = document.getElementById("captionMeta");
@@ -28,20 +20,11 @@ const photoDrawer = document.getElementById("photoDrawer");
 const drawerTitle = document.getElementById("drawerTitle");
 const drawerMeta = document.getElementById("drawerMeta");
 const drawerGrid = document.getElementById("drawerGrid");
-const tabBar = document.getElementById("tabBar");
-const tabButtons = Array.from(tabBar.querySelectorAll("[data-tab]"));
-const tabIndicator = document.getElementById("tabIndicator");
-const assignLocationBtn = document.getElementById("assignLocationBtn");
-const locationModal = document.getElementById("locationModal");
-const locationInput = document.getElementById("locationInput");
-const saveLocationBtn = document.getElementById("saveLocationBtn");
-const cancelLocationBtn = document.getElementById("cancelLocationBtn");
 const vinylStage = document.getElementById("vinylStage");
 const vinylCtx = vinylStage ? vinylStage.getContext("2d") : null;
 
 let collections = [];
 let allPhotos = [];
-let noticeTimer = 0;
 
 const app = {
   renderer: null,
@@ -148,7 +131,6 @@ async function boot() {
     setupThree();
     setupEvents();
     updateCaption();
-    updateTabIndicator();
     tick();
   } catch (err) {
     console.error("boot error:", err);
@@ -710,7 +692,6 @@ function resize() {
   app.camera.lookAt(0, 0, 0);
   app.camera.updateProjectionMatrix();
   syncPresentationClass();
-  updateTabIndicator();
   drawDetail();
   if (vinyl.phase !== VS_HIDDEN) resizeVinyl();
 }
@@ -728,74 +709,10 @@ function setupEvents() {
   vinylStage.addEventListener("pointermove", onVinylPointerMove);
   vinylStage.addEventListener("pointerup", onVinylPointerUp);
   vinylStage.addEventListener("pointercancel", onVinylPointerUp);
-  importBtn.addEventListener("click", () => filePicker.click());
-  deleteCdBtn.addEventListener("click", deleteCurrentCollection);
-  tabButtons.forEach((button) => button.addEventListener("click", () => switchTab(button.dataset.tab)));
   backBtn.addEventListener("click", () => closeDetail());
-  filePicker.addEventListener("change", () => handleFiles(filePicker.files));
   drawerGrid.addEventListener("click", onDrawerClick);
   drawerGrid.addEventListener("mouseover", onDrawerHover);
   drawerGrid.addEventListener("mouseleave", () => updateCaption());
-  assignLocationBtn.addEventListener("click", () => openLocationModal());
-  saveLocationBtn.addEventListener("click", () => saveLocationAssignment());
-  cancelLocationBtn.addEventListener("click", () => closeLocationModal());
-}
-
-function switchTab(criterion) {
-  if (!["palette", "location", "time"].includes(criterion) || criterion === app.currentCriterion) return;
-  app.currentCriterion = criterion;
-  tabButtons.forEach((button) => button.classList.toggle("active", button.dataset.tab === criterion));
-  updateTabIndicator();
-  regroupCollections(criterion, null, false);
-  saveUserLibrary();
-}
-
-function updateTabIndicator() {
-  const active = tabBar.querySelector("button.active");
-  if (!active || !tabIndicator) return;
-  const barRect = tabBar.getBoundingClientRect();
-  const btnRect = active.getBoundingClientRect();
-  tabIndicator.style.width = `${btnRect.width * 0.52}px`;
-  tabIndicator.style.left = `${btnRect.left - barRect.left + (btnRect.width - btnRect.width * 0.52) / 2}px`;
-}
-
-function updateAssignLocationBtn() {
-  assignLocationBtn.classList.toggle("show", app.currentCriterion === "location" && app.selectedPhotos.size > 0);
-}
-
-function openLocationModal() {
-  locationInput.value = "";
-  locationModal.classList.add("open");
-  locationInput.focus();
-}
-
-function closeLocationModal() {
-  locationModal.classList.remove("open");
-}
-
-function saveLocationAssignment() {
-  const locationName = locationInput.value.trim();
-  if (!locationName) return;
-  const collection = collections[app.drawerIndex];
-  if (!collection) {
-    console.warn("No collection at drawerIndex", app.drawerIndex);
-    return;
-  }
-  const locationKey = "loc-manual-" + encodeURIComponent(locationName.toLowerCase());
-  app.selectedPhotos.forEach((photoIndex) => {
-    const photo = collection.photos[photoIndex];
-    if (photo) {
-      if (!photo.manualGroupByCriterion) photo.manualGroupByCriterion = {};
-      photo.manualGroupByCriterion.location = { key: locationKey, title: locationName };
-      photo.locationLabel = locationName;
-      photo.locationKey = locationKey;
-      photo.locationSource = "manual";
-    }
-  });
-  closeLocationModal();
-  app.selectedPhotos.clear();
-  regroupCollections(app.currentCriterion, locationKey, true);
-  saveUserLibrary();
 }
 
 function onPointerDown(event) {
@@ -947,7 +864,6 @@ function renderDrawer(index) {
   if (!collection) return;
   app.drawerIndex = index;
   app.selectedPhotos.clear();
-  updateAssignLocationBtn();
   drawerTitle.textContent = collection.title;
   drawerMeta.textContent = `${collection.photos.length} 张`;
   drawerGrid.replaceChildren();
@@ -975,43 +891,12 @@ function getPhotoDrawerLabel(photo) {
 function hideDrawer() {
   photoDrawer.classList.remove("open");
   app.selectedPhotos.clear();
-  updateAssignLocationBtn();
-}
-
-function deleteCurrentCollection() {
-  void deleteCurrentCollectionAsync();
-}
-
-async function deleteCurrentCollectionAsync() {
-  const collection = collections[app.selectedIndex] || collections[0];
-  if (!collection) return;
-  const ids = new Set(collection.photos.map((photo) => photo.id));
-  allPhotos = allPhotos.filter((photo) => !ids.has(photo.id));
-  app.flippedId = null;
-  if (!allPhotos.length) {
-    await removeStoredLibrary();
-  } else {
-    await saveUserLibrary();
-  }
-  regroupCollections(app.currentCriterion, null, false);
-  showNotice(`已删除 ${collection.title}`);
 }
 
 function onDrawerClick(event) {
   const button = event.target.closest(".photo-thumb");
   if (!button) return;
   const photoIndex = Number(button.dataset.photoIndex || 0);
-  if (app.currentCriterion === "location") {
-    if (app.selectedPhotos.has(photoIndex)) {
-      app.selectedPhotos.delete(photoIndex);
-      button.classList.remove("selected");
-    } else {
-      app.selectedPhotos.add(photoIndex);
-      button.classList.add("selected");
-    }
-    updateAssignLocationBtn();
-    return;
-  }
   app.drawerPhoto = photoIndex;
   app.detailPhoto = app.drawerPhoto;
   drawerGrid.querySelectorAll(".photo-thumb").forEach((item, index) => {
@@ -1607,51 +1492,11 @@ async function restoreSavedLibrary() {
     if (!restored.length) return false;
     allPhotos = restored;
     app.currentCriterion = ["palette", "location", "time"].includes(saved.currentCriterion) ? saved.currentCriterion : "palette";
-    tabButtons.forEach((button) => button.classList.toggle("active", button.dataset.tab === app.currentCriterion));
     return true;
   } catch (err) {
     console.warn("Saved library restore failed", err);
     await removeStoredLibrary();
     return false;
-  }
-}
-
-async function saveUserLibrary() {
-  try {
-    const photos = allPhotos
-      .slice(0, 60)
-      .map((photo) => ({
-        id: photo.id,
-        name: photo.name,
-        storedDataUrl: photo.storedDataUrl || sourceToStorageDataUrl(photo.source),
-        criterionSource: photo.criterionSource || "palette",
-        paletteKey: photo.paletteKey,
-        paletteLabel: photo.paletteLabel,
-        sceneLabel: photo.sceneLabel,
-        dominantColor: photo.dominantColor,
-        timeLabel: photo.timeLabel,
-        timeKey: photo.timeKey,
-        timeSource: photo.timeSource,
-        locationLabel: photo.locationLabel,
-        locationKey: photo.locationKey,
-        locationSource: photo.locationSource,
-        deviceLabel: photo.deviceLabel,
-        deviceKey: photo.deviceKey,
-        gps: photo.gps || null,
-        manualGroupByCriterion: photo.manualGroupByCriterion || {}
-      }));
-    if (!photos.length) {
-      await removeStoredLibrary();
-      return;
-    }
-    await writeStoredLibrary({
-      currentCriterion: app.currentCriterion,
-      savedAt: Date.now(),
-      photos
-    });
-  } catch (err) {
-    console.warn("Saved library write failed", err);
-    showNotice("照片已导入，但本地空间不足，刷新后可能不会保留", 3600);
   }
 }
 
@@ -1661,14 +1506,6 @@ function readStoredLibrary() {
       const raw = localStorage.getItem(STORAGE_KEY);
       return raw ? JSON.parse(raw) : null;
     });
-}
-
-async function writeStoredLibrary(payload) {
-  try {
-    await withLibraryStore("readwrite", (store) => requestToPromise(store.put(payload, STORAGE_KEY)));
-  } catch {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-  }
 }
 
 async function removeStoredLibrary() {
@@ -1719,79 +1556,6 @@ function requestToPromise(request) {
   });
 }
 
-async function handleFiles(files) {
-  const criterion = app.currentCriterion;
-  if (!files || !files.length) return;
-  const importedPhotos = [];
-  const failures = [];
-  for (const file of Array.from(files).slice(0, 40)) {
-    try {
-      const image = await fileToCanvasSource(file);
-      const analysis = analyzePalette(image);
-      const metadata = await parsePhotoMetadata(file);
-      const storedDataUrl = sourceToStorageDataUrl(image);
-      importedPhotos.unshift({
-        id: `user-${Date.now()}-${Math.random()}`,
-        name: cleanName(file.name),
-        source: image,
-        storedDataUrl,
-        criterionSource: criterion,
-        paletteKey: analysis.collectionId,
-        paletteLabel: analysis.paletteLabel,
-        sceneLabel: analysis.sceneLabel,
-        dominantColor: analysis.dominantColor,
-        timeLabel: metadata.timeLabel,
-        timeKey: metadata.timeKey,
-        timeSource: metadata.timeSource,
-        locationLabel: metadata.locationLabel,
-        locationKey: metadata.locationKey,
-        locationSource: metadata.locationSource,
-        deviceLabel: metadata.deviceLabel,
-        deviceKey: metadata.deviceKey,
-        gps: metadata.gps,
-        manualGroupByCriterion: {}
-      });
-    } catch (err) {
-      failures.push(`${file.name || "照片"}：${err?.message || "无法解码"}`);
-      continue;
-    }
-  }
-  filePicker.value = "";
-  if (!importedPhotos.length) {
-    showNotice(failures[0] || IMPORT_UNREADABLE_TEXT, 4200);
-    return;
-  }
-  allPhotos.unshift(...importedPhotos);
-  await saveUserLibrary();
-  if (app.currentCriterion === "location") {
-    const importedIds = new Set(importedPhotos.map((p) => p.id));
-    openLocationModal();
-    regroupCollections("location", "unknown-location", true);
-    const ci = app.drawerIndex;
-    const collection = collections[ci];
-    if (collection) {
-      collection.photos.forEach((photo, pi) => {
-        if (importedIds.has(photo.id)) app.selectedPhotos.add(pi);
-      });
-      updateAssignLocationBtn();
-    }
-  } else {
-    regroupCollections(app.currentCriterion, null, false);
-  }
-  updateCaption();
-  if (failures.length) showNotice(`已导入 ${importedPhotos.length} 张，${failures.length} 张失败：${failures[0]}`, 4200);
-}
-
-function showNotice(message, duration = 2600) {
-  clearTimeout(noticeTimer);
-  errorEl.textContent = message || ERROR_TEXT;
-  errorEl.classList.add("show");
-  noticeTimer = setTimeout(() => {
-    errorEl.classList.remove("show");
-    errorEl.textContent = ERROR_TEXT;
-  }, duration);
-}
-
 function rebuildCase(collection) {
   const index = collections.findIndex((c) => c.id === collection.id);
   if (index < 0 || !app.groups[index]) return;
@@ -1810,77 +1574,6 @@ function rebuildCase(collection) {
   app.groups[index] = createCaseGroup(collection, index);
 }
 
-async function fileToCanvasSource(file) {
-  const decoded = await decodeImageFile(file);
-  try {
-    return normalizeImageSource(decoded);
-  } finally {
-    if (decoded && typeof decoded.close === "function") decoded.close();
-  }
-}
-
-async function decodeImageFile(file) {
-  try {
-    return await decodeBrowserReadableBlob(file);
-  } catch (nativeErr) {
-    if (await shouldUseHeicDecoder(file)) {
-      try {
-        const convertedBlob = await heicTo({
-          blob: file,
-          type: "image/jpeg",
-          quality: 0.86
-        });
-        return decodeBrowserReadableBlob(convertedBlob);
-      } catch (heicErr) {
-        throw new Error(`HEIC 转码失败：${formatDecodeError(heicErr)}`);
-      }
-    }
-    throw new Error(`图片解码失败：${formatDecodeError(nativeErr)}`);
-  }
-}
-
-async function decodeBrowserReadableBlob(blob) {
-  if ("createImageBitmap" in globalThis) {
-    try {
-      return await createImageBitmap(blob, { imageOrientation: "from-image" });
-    } catch {
-      // Some WebViews decode formats through <img> even when createImageBitmap cannot.
-    }
-  }
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    const url = URL.createObjectURL(blob);
-    image.addEventListener("load", () => {
-      URL.revokeObjectURL(url);
-      resolve(image);
-    }, { once: true });
-    image.addEventListener("error", () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("image decode failed"));
-    }, { once: true });
-    image.src = url;
-  });
-}
-
-function isHeicFile(file) {
-  const type = String(file?.type || "").toLowerCase();
-  const name = String(file?.name || "").toLowerCase();
-  return type.includes("heic") || type.includes("heif") || /\.(heic|heif)$/.test(name);
-}
-
-async function shouldUseHeicDecoder(file) {
-  if (isHeicFile(file)) return true;
-  try {
-    return await isHeic(file);
-  } catch {
-    return false;
-  }
-}
-
-function formatDecodeError(err) {
-  return String(err?.message || err || "未知原因").replace(/^Error:\s*/, "").slice(0, 80);
-}
-
 function normalizeImageSource(source) {
   const maxSide = 1800;
   const sw = source.width || 1;
@@ -1892,19 +1585,6 @@ function normalizeImageSource(source) {
   const ctx = canvas.getContext("2d");
   ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
   return canvas;
-}
-
-function sourceToStorageDataUrl(source) {
-  const maxSide = 1280;
-  const sw = source.width || 1;
-  const sh = source.height || 1;
-  const scale = Math.min(1, maxSide / Math.max(sw, sh));
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(sw * scale));
-  canvas.height = Math.max(1, Math.round(sh * scale));
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", 0.78);
 }
 
 function dataUrlToCanvasSource(dataUrl) {
@@ -1950,10 +1630,6 @@ function text(ctx, value, x, y, size, color, weight = 400, align = "left", famil
   ctx.textAlign = align;
   ctx.textBaseline = "alphabetic";
   ctx.fillText(value, x, y);
-}
-
-function cleanName(name) {
-  return (name || "未命名照片").replace(/\.[^.]+$/, "").slice(0, 24);
 }
 
 function clamp(value, min, max) {
