@@ -1381,11 +1381,11 @@ function drawArcGuide(ctx, cx, cy, radius) {
 
 function drawArcThumbnail(ctx, item) {
   const thumb = vinyl.thumbs[item.i];
+  const photoSource = vinyl.photos[item.i]?.source || thumb;
   const angle = item.angle;
   const absOffset = Math.abs(item.offset);
   const focus = smooth01(item.focus);
-  const opacity = 0.34 + focus * 0.66;
-  const blur = (1 - focus) * 0.65;
+  const opacity = 0.5 + focus * 0.5;
   const centerTheta = angle - Math.PI / 2;
   const half = ARC_ANGLE_STEP * (0.42 + focus * 0.16);
   const outerR = vinyl.ringR + 34 + focus * 12;
@@ -1395,7 +1395,7 @@ function drawArcThumbnail(ctx, item) {
 
   ctx.save();
   ctx.globalAlpha = opacity;
-  ctx.filter = blur > 0.1 ? "blur(" + blur.toFixed(2) + "px)" : "none";
+  ctx.filter = "none";
   if (focus > 0.42) {
     ctx.shadowColor = "rgba(255,255,255," + (0.24 * focus).toFixed(2) + ")";
     ctx.shadowBlur = 20 * focus;
@@ -1412,7 +1412,7 @@ function drawArcThumbnail(ctx, item) {
   ctx.beginPath();
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
-  if (thumb) drawCoverImage(ctx, thumb, -boxW / 2, -boxH / 2, boxW, boxH);
+  if (photoSource) drawCoverImage(ctx, photoSource, -boxW / 2, -boxH / 2, boxW, boxH);
   else {
     ctx.fillStyle = "#181512";
     ctx.fillRect(-boxW / 2, -boxH / 2, boxW, boxH);
