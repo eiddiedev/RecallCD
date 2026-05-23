@@ -1160,8 +1160,8 @@ function resizeVinyl() {
   vinylCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   vinyl.cx = w / 2;
   vinyl.vinylR = clamp(w * 0.86, 310, h * 0.54);
-  vinyl.cy = h + vinyl.vinylR * 0.46;
-  vinyl.ringR = vinyl.vinylR * 0.92;
+  vinyl.cy = h + vinyl.vinylR * 0.16;
+  vinyl.ringR = vinyl.vinylR * 0.86;
   vinyl.vinylTargetY = vinyl.cy;
 }
 
@@ -1213,7 +1213,7 @@ function PhotoPreview(ctx, now) {
   const photo = vinyl.photos[vinyl.selectedIndex];
   if (!photo) return;
   const fromPhoto = vinyl.photos[vinyl.previewFromIndex] || photo;
-  const topLimit = Math.max(260, vinyl.vinylY - vinyl.ringR - 116);
+  const topLimit = Math.max(250, vinyl.vinylY - vinyl.ringR - 92);
   const bgColor = photo.dominantColor || vinyl.palette?.primary || "#1f1b18";
 
   const bg = ctx.createLinearGradient(0, 0, 0, vinyl.h);
@@ -1287,35 +1287,39 @@ function drawVinylDisc(ctx, cx, cy, r, angle, palette) {
   ctx.rotate(angle * 0.24);
 
   ctx.beginPath(); ctx.arc(0, 0, r + 12, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(0,0,0,.58)"; ctx.fill();
+  ctx.fillStyle = "rgba(0,0,0,.46)"; ctx.fill();
   ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2);
   const discGrad = ctx.createRadialGradient(-r * 0.16, -r * 0.28, r * 0.08, 0, 0, r);
-  discGrad.addColorStop(0, "#24211e");
-  discGrad.addColorStop(0.36, "#151413");
-  discGrad.addColorStop(0.72, "#090909");
-  discGrad.addColorStop(1, "#020202");
+  discGrad.addColorStop(0, "#3a3631");
+  discGrad.addColorStop(0.34, "#242220");
+  discGrad.addColorStop(0.7, "#141414");
+  discGrad.addColorStop(1, "#070707");
   ctx.fillStyle = discGrad; ctx.fill();
 
-  for (let i = 0; i < 34; i += 1) {
-    const gr = r * (0.2 + i * 0.023);
+  for (let i = 0; i < 44; i += 1) {
+    const gr = r * (0.16 + i * 0.019);
     ctx.beginPath(); ctx.arc(0, 0, gr, 0, Math.PI * 2);
-    ctx.strokeStyle = "rgba(255,255,255," + (i % 4 === 0 ? 0.036 : 0.014) + ")";
+    ctx.strokeStyle = "rgba(255,255,255," + (i % 4 === 0 ? 0.058 : 0.024) + ")";
     ctx.lineWidth = i % 5 === 0 ? 0.9 : 0.45; ctx.stroke();
   }
 
-  const labelR = r * 0.3;
+  const labelR = r * 0.31;
   ctx.beginPath(); ctx.arc(0, 0, labelR, 0, Math.PI * 2);
   ctx.fillStyle = palette.primary; ctx.fill();
   ctx.beginPath(); ctx.arc(0, 0, labelR * 0.92, 0, Math.PI * 2);
-  ctx.fillStyle = palette.secondary; ctx.fill();
+  const labelGrad = ctx.createRadialGradient(-labelR * 0.3, -labelR * 0.36, labelR * 0.08, 0, 0, labelR * 0.94);
+  labelGrad.addColorStop(0, tintHex(palette.primary, 1, 1.36));
+  labelGrad.addColorStop(0.58, palette.primary);
+  labelGrad.addColorStop(1, palette.secondary);
+  ctx.fillStyle = labelGrad; ctx.fill();
   ctx.save();
   ctx.beginPath(); ctx.arc(0, 0, labelR * 0.92, 0, Math.PI * 2); ctx.clip();
-  ctx.fillStyle = palette.primary;
+  ctx.fillStyle = tintHex(palette.text, 0.96, 1);
   ctx.font = "800 " + (labelR * 0.34) + "px Impact, Arial Black, sans-serif";
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillText("RECALL", 0, -labelR * 0.16);
   ctx.font = "700 " + (labelR * 0.24) + "px Arial, sans-serif";
-  ctx.fillStyle = palette.text;
+  ctx.fillStyle = "rgba(255,248,232,.78)";
   ctx.fillText("CD 2026", 0, labelR * 0.28);
   ctx.restore();
 
@@ -1324,9 +1328,9 @@ function drawVinylDisc(ctx, cx, cy, r, angle, palette) {
 
   const shine = ctx.createLinearGradient(-r * 0.72, -r * 0.78, r * 0.75, r * 0.3);
   shine.addColorStop(0, "rgba(255,255,255,0)");
-  shine.addColorStop(0.44, "rgba(255,255,255,.035)");
-  shine.addColorStop(0.5, "rgba(255,255,255,.12)");
-  shine.addColorStop(0.56, "rgba(255,255,255,.026)");
+  shine.addColorStop(0.4, "rgba(255,255,255,.058)");
+  shine.addColorStop(0.5, "rgba(255,255,255,.18)");
+  shine.addColorStop(0.6, "rgba(255,255,255,.044)");
   shine.addColorStop(1, "rgba(255,255,255,0)");
   ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2);
   ctx.fillStyle = shine; ctx.fill();
@@ -1350,22 +1354,22 @@ function ArcWheel(ctx) {
 
   visible.sort((a, b) => a.focus - b.focus);
 
-  drawArcGuide(ctx, cx, cy, ringR);
   visible.forEach((item) => drawArcThumbnail(ctx, item));
+  drawArcGuide(ctx, cx, cy, ringR);
 }
 
 function drawArcGuide(ctx, cx, cy, radius) {
   ctx.save();
-  ctx.beginPath(); ctx.arc(cx, cy, radius, -Math.PI * 0.78, -Math.PI * 0.22);
-  ctx.strokeStyle = "rgba(255,255,255,.07)";
+  ctx.beginPath(); ctx.arc(cx, cy, radius + 5, -Math.PI * 0.81, -Math.PI * 0.19);
+  ctx.strokeStyle = "rgba(255,255,255,.14)";
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, radius - 52, -Math.PI * 0.79, -Math.PI * 0.21);
+  ctx.strokeStyle = "rgba(0,0,0,.34)";
   ctx.lineWidth = 1;
   ctx.stroke();
-  ctx.beginPath(); ctx.arc(cx, cy, radius + 12, -Math.PI * 0.74, -Math.PI * 0.26);
-  ctx.strokeStyle = "rgba(0,0,0,.28)";
-  ctx.lineWidth = 18;
-  ctx.stroke();
   ctx.beginPath(); ctx.arc(cx, cy, radius, -Math.PI / 2 - 0.11, -Math.PI / 2 + 0.11);
-  ctx.strokeStyle = "rgba(255,255,255,.34)";
+  ctx.strokeStyle = "rgba(255,248,226,.58)";
   ctx.lineWidth = 3;
   ctx.shadowColor = "rgba(255,255,255,.32)";
   ctx.shadowBlur = 12;
@@ -1376,49 +1380,55 @@ function drawArcGuide(ctx, cx, cy, radius) {
 function drawArcThumbnail(ctx, item) {
   const thumb = vinyl.thumbs[item.i];
   const angle = item.angle;
-  const x = vinyl.cx + Math.sin(angle) * vinyl.ringR;
-  const y = vinyl.vinylY - Math.cos(angle) * vinyl.ringR;
   const absOffset = Math.abs(item.offset);
   const focus = smooth01(item.focus);
-  const scale = 0.52 + focus * 0.74;
-  const opacity = 0.18 + focus * 0.82;
-  const blur = (1 - focus) * 3.2;
-  const rotate = angle * 0.78;
-  const baseW = clamp(vinyl.w * 0.18, 64, 92);
-  const width = baseW * scale;
-  const ratio = thumb ? thumb.width / thumb.height : 0.76;
-  const height = width / ratio;
-  const lift = -focus * 14;
+  const opacity = 0.2 + focus * 0.8;
+  const blur = (1 - focus) * 2.4;
+  const centerTheta = angle - Math.PI / 2;
+  const half = ARC_ANGLE_STEP * (0.42 + focus * 0.16);
+  const outerR = vinyl.ringR + 34 + focus * 12;
+  const innerR = outerR - (46 + focus * 34);
+  const thetaA = centerTheta - half;
+  const thetaB = centerTheta + half;
 
   ctx.save();
-  ctx.translate(x, y + lift);
-  ctx.rotate(rotate);
   ctx.globalAlpha = opacity;
   ctx.filter = blur > 0.1 ? "blur(" + blur.toFixed(2) + "px)" : "none";
   if (focus > 0.42) {
     ctx.shadowColor = "rgba(255,255,255," + (0.24 * focus).toFixed(2) + ")";
-    ctx.shadowBlur = 18 * focus;
+    ctx.shadowBlur = 20 * focus;
   }
-  ctx.beginPath();
-  roundRect(ctx, -width / 2, -height / 2, width, height, 7);
+  drawArcSlicePath(ctx, vinyl.cx, vinyl.vinylY, innerR, outerR, thetaA, thetaB);
   ctx.clip();
-  if (thumb) ctx.drawImage(thumb, -width / 2, -height / 2, width, height);
+  const midR = (innerR + outerR) / 2;
+  const midX = vinyl.cx + Math.cos(centerTheta) * midR;
+  const midY = vinyl.vinylY + Math.sin(centerTheta) * midR;
+  const boxW = Math.max(86, (outerR - innerR) * 2.45);
+  const boxH = Math.max(72, outerR * (thetaB - thetaA) * 1.55);
+  ctx.translate(midX, midY);
+  ctx.rotate(angle * 0.64);
+  ctx.beginPath();
+  if (thumb) drawCoverImage(ctx, thumb, -boxW / 2, -boxH / 2, boxW, boxH);
   else {
     ctx.fillStyle = "#181512";
-    ctx.fillRect(-width / 2, -height / 2, width, height);
+    ctx.fillRect(-boxW / 2, -boxH / 2, boxW, boxH);
   }
   ctx.restore();
 
   ctx.save();
-  ctx.translate(x, y + lift);
-  ctx.rotate(rotate);
   ctx.globalAlpha = clamp(opacity + 0.08, 0, 1);
-  ctx.strokeStyle = absOffset < 0.5 ? "rgba(255,246,226,.92)" : "rgba(255,255,255,.18)";
-  ctx.lineWidth = absOffset < 0.5 ? 2.3 : 0.8;
-  ctx.beginPath();
-  roundRect(ctx, -width / 2, -height / 2, width, height, 7);
+  ctx.strokeStyle = absOffset < 0.5 ? "rgba(255,246,226,.96)" : "rgba(255,255,255,.16)";
+  ctx.lineWidth = absOffset < 0.5 ? 2.2 : 0.8;
+  drawArcSlicePath(ctx, vinyl.cx, vinyl.vinylY, innerR, outerR, thetaA, thetaB);
   ctx.stroke();
   ctx.restore();
+}
+
+function drawArcSlicePath(ctx, cx, cy, innerR, outerR, thetaA, thetaB) {
+  ctx.beginPath();
+  ctx.arc(cx, cy, outerR, thetaA, thetaB, false);
+  ctx.arc(cx, cy, innerR, thetaB, thetaA, true);
+  ctx.closePath();
 }
 
 function drawVinylChrome(ctx) {
