@@ -842,18 +842,28 @@ function hidePresentation() {
     vinyl.phase = VS_HIDDEN;
     stopVinylLoop();
     vinylStage.classList.remove("active");
-    document.body.classList.remove("presenting");
   }
+  restorePresentedCase();
   app.flippedId = null;
   app.presentationPhase = "idle";
   app.presentationTimer = 0;
+  document.body.classList.remove("presenting");
   updateCaption();
+}
+
+function restorePresentedCase() {
+  const group = app.groups[app.selectedIndex];
+  if (!group) return;
+  group.rotation.y = 0;
+  group.userData._faded = false;
+  group.visible = true;
+  setGroupOpacity(group, 1);
 }
 
 function syncPresentationClass() {
   const collection = collections[app.selectedIndex] || collections[0];
   const presenting = Boolean(app.flippedId && innerHeight >= innerWidth
-    && (app.presentationPhase === "rotating" || app.presentationPhase === "presenting") && collection);
+    && (app.presentationPhase === "scattering" || app.presentationPhase === "presenting") && collection);
   document.body.classList.toggle("presenting", presenting);
   if (collection && albumTitleLayer) albumTitleLayer.querySelector("strong").textContent = collection.title;
   if (collection) updateTitlePlane(collection);
@@ -1125,7 +1135,11 @@ function PhotoPreview(ctx, now) {
   ctx.fillStyle = "rgba(255,248,232,.72)";
   ctx.font = "800 11px Arial, PingFang SC, sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText(String(vinyl.selectedIndex + 1).padStart(2, "0") + " / " + String(vinyl.photos.length).padStart(2, "0"), vinyl.w / 2, Math.max(30, topLimit - 22));
+  ctx.fillText(
+    String(vinyl.selectedIndex + 1).padStart(2, "0") + " / " + String(vinyl.photos.length).padStart(2, "0"),
+    vinyl.w / 2,
+    Math.min(vinyl.h - 126, topLimit + 26)
+  );
   ctx.restore();
 }
 

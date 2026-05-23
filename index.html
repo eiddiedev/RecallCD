@@ -78,6 +78,7 @@
       left: 22px;
       z-index: 1;
       width: min(260px, calc(100vw - 138px));
+      transition: opacity .28s ease, transform .28s ease;
     }
     .brand small {
       display: block;
@@ -132,6 +133,10 @@
     body.presenting .caption {
       opacity: 0;
       transform: translateY(18px);
+    }
+    body.presenting .brand {
+      opacity: 0;
+      transform: translateY(-12px);
     }
     .album-title-layer {
       position: fixed;
