@@ -28,10 +28,14 @@ const photoDrawer = document.getElementById("photoDrawer");
 const drawerTitle = document.getElementById("drawerTitle");
 const drawerMeta = document.getElementById("drawerMeta");
 const drawerGrid = document.getElementById("drawerGrid");
-const importModal = document.getElementById("importModal");
-const criterionButtons = Array.from(document.querySelectorAll("[data-criterion]"));
-const chooseFilesBtn = document.getElementById("chooseFilesBtn");
-const cancelImportBtn = document.getElementById("cancelImportBtn");
+const tabBar = document.getElementById("tabBar");
+const tabButtons = Array.from(tabBar.querySelectorAll("[data-tab]"));
+const tabIndicator = document.getElementById("tabIndicator");
+const assignLocationBtn = document.getElementById("assignLocationBtn");
+const locationModal = document.getElementById("locationModal");
+const locationInput = document.getElementById("locationInput");
+const saveLocationBtn = document.getElementById("saveLocationBtn");
+const cancelLocationBtn = document.getElementById("cancelLocationBtn");
 
 let collections = [];
 let allPhotos = [];
@@ -58,35 +62,35 @@ const app = {
   detailPhoto: 0,
   drawerPhoto: 0,
   currentCriterion: "palette",
-  pendingCriterion: "palette",
-  hasUserPhotos: false,
+  drawerIndex: -1,
+  selectedPhotos: new Set(),
   detailCtx: detailCanvas.getContext("2d")
 };
 
-function makeCollection(id, title, spine, palette, tags, photos = [], criterion = "palette") {
-  return {
+function makeCollection(id, title, spine, palette, photos = [], criterion = "palette") {
+  const collection = {
     id,
     title,
     spine,
-    sideLabels: makeSideLabels(spine, photos[0], criterion),
     palette,
-    tags,
     photos,
-    criterion,
-    cornerLabel: getCriterionLabel(criterion).toUpperCase()
+    criterion
   };
+  collection.sideLabels = makeSideLabels(collection, photos[0], criterion);
+  return collection;
 }
 
 async function boot() {
   try {
-    const restored = await restoreSavedLibrary();
-    if (!restored) seedSamples();
+    await restoreSavedLibrary();
     collections = buildCollections(app.currentCriterion);
     setupThree();
     setupEvents();
     updateCaption();
+    updateTabIndicator();
     tick();
   } catch (err) {
+    console.error("boot error:", err);
     showError(err);
   }
 }
@@ -115,7 +119,7 @@ function setupThree() {
   app.scene.add(rim);
 
   app.groups = collections.map((collection, index) => createCaseGroup(collection, index));
-  app.titlePlane = createTitlePlane(collections[0]);
+  app.titlePlane = createTitlePlane(collections[0] || { title: "记忆CD" });
   resize();
 }
 
@@ -124,11 +128,11 @@ function createCaseGroup(collection, index) {
   group.userData = { collectionId: collection.id, index };
 
   const coverTexture = makeCoverTexture(collection);
-  const mainSpineTexture = makeSideTexture(collection, collection.sideLabels.main, "spine", true);
-  const locationSpineTexture = makeSideTexture(collection, collection.sideLabels.location, "spine", false);
+  const mainSpineTexture = makeSideTexture(collection, collection.sideLabels[0], "spine", true);
+  const locationSpineTexture = makeSideTexture(collection, collection.sideLabels[1], "spine", true, true);
   const backTexture = makeTextTexture(collection, "back");
-  const timeSpineTexture = makeFrontSpineTexture(collection, collection.sideLabels.time, false);
-  const deviceSpineTexture = makeFrontSpineTexture(collection, collection.sideLabels.device, false);
+  const timeSpineTexture = makeFrontSpineTexture(collection, collection.sideLabels[2], false);
+  const deviceSpineTexture = makeFrontSpineTexture(collection, collection.sideLabels[3], false, true);
   const mainSpineMaterial = new THREE.MeshPhysicalMaterial({
     map: mainSpineTexture,
     metalness: 0,
@@ -274,49 +278,131 @@ function makeCoverTexture(collection) {
   return texture;
 }
 
-function makeSideLabels(main, photo, criterion) {
-  const location = photo?.locationLabel || "未知地点";
-  const time = photo?.timeKey && photo.timeKey !== "unknown-time"
-    ? photo.timeKey
-    : (photo?.timeLabel || "未知时间").replace(/^拍摄\s*|^文件\s*/, "").slice(0, 7);
-  const device = photo?.deviceLabel || "未知设备";
-  return {
-    main: formatMainSpine(main, photo, criterion),
-    location,
-    time: time || "未知时间",
-    device
+function makeSideLabels(collection, photo, criterion) {
+  const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const LOC_EN = {
+    // 中国省份
+    "广东": "Guangdong", "上海": "Shanghai", "北京": "Beijing", "四川": "Sichuan",
+    "浙江": "Zhejiang", "江苏": "Jiangsu", "云南": "Yunnan", "福建": "Fujian",
+    "山东": "Shandong", "陕西": "Shaanxi", "中国": "China", "未知地点": "Unknown",
+    "海南": "Hainan", "广西": "Guangxi", "贵州": "Guizhou", "湖南": "Hunan",
+    "湖北": "Hubei", "河南": "Henan", "河北": "Hebei", "山西": "Shanxi",
+    "安徽": "Anhui", "江西": "Jiangxi", "黑龙江": "Heilongjiang", "吉林": "Jilin",
+    "辽宁": "Liaoning", "内蒙古": "Inner Mongolia", "新疆": "Xinjiang", "西藏": "Tibet",
+    "青海": "Qinghai", "甘肃": "Gansu", "宁夏": "Ningxia", "天津": "Tianjin",
+    "重庆": "Chongqing",
+    // 中国城市
+    "成都": "Chengdu", "杭州": "Hangzhou", "南京": "Nanjing", "西安": "Xi'an",
+    "重庆": "Chongqing", "武汉": "Wuhan", "苏州": "Suzhou", "长沙": "Changsha",
+    "青岛": "Qingdao", "大连": "Dalian", "厦门": "Xiamen", "昆明": "Kunming",
+    "哈尔滨": "Harbin", "深圳": "Shenzhen", "广州": "Guangzhou", "珠海": "Zhuhai",
+    "三亚": "Sanya", "桂林": "Guilin", "拉萨": "Lhasa", "洛阳": "Luoyang",
+    "开封": "Kaifeng", "敦煌": "Dunhuang", "丽江": "Lijiang", "大理": "Dali",
+    "九寨沟": "Jiuzhaigou", "黄山": "Huangshan", "泰山": "Mount Tai",
+    "峨眉山": "Mount Emei", "张家界": "Zhangjiajie", "婺源": "Wuyuan",
+    "凤凰": "Fenghuang", "西塘": "Xitang", "乌镇": "Wuzhen",
+    // 日本
+    "东京": "Tokyo", "大阪": "Osaka", "京都": "Kyoto", "奈良": "Nara",
+    "北海道": "Hokkaido", "冲绳": "Okinawa", "名古屋": "Nagoya", "福冈": "Fukuoka",
+    "横滨": "Yokohama", "神户": "Kobe", "镰仓": "Kamakura", "富士山": "Mt. Fuji",
+    "箱根": "Hakone", "札幌": "Sapporo", "长崎": "Nagasaki", "广岛": "Hiroshima",
+    "Japan": "Japan",
+    // 韩国
+    "首尔": "Seoul", "釜山": "Busan", "济州": "Jeju", "济州岛": "Jeju",
+    "仁川": "Incheon", "大邱": "Daegu", "庆州": "Gyeongju",
+    "Korea": "Korea",
+    // 东南亚
+    "曼谷": "Bangkok", "清迈": "Chiang Mai", "普吉": "Phuket", "芭提雅": "Pattaya",
+    "巴厘岛": "Bali", "雅加达": "Jakarta", "泗水": "Surabaya",
+    "新加坡": "Singapore", "吉隆坡": "Kuala Lumpur", "槟城": "Penang", "兰卡威": "Langkawi",
+    "马尼拉": "Manila", "长滩岛": "Boracay", "河内": "Hanoi", "胡志明": "Ho Chi Minh",
+    "岘港": "Da Nang", "暹粒": "Siem Reap", "金边": "Phnom Penh", "仰光": "Yangon",
+    "Thailand": "Thailand", "Indonesia": "Indonesia", "Vietnam": "Vietnam",
+    "Malaysia": "Malaysia", "Philippines": "Philippines", "Cambodia": "Cambodia",
+    // 欧洲
+    "巴黎": "Paris", "伦敦": "London", "罗马": "Rome", "米兰": "Milan",
+    "威尼斯": "Venice", "佛罗伦萨": "Florence", "巴塞罗那": "Barcelona",
+    "马德里": "Madrid", "柏林": "Berlin", "慕尼黑": "Munich", "维也纳": "Vienna",
+    "布拉格": "Prague", "阿姆斯特丹": "Amsterdam", "布鲁塞尔": "Brussels",
+    "苏黎世": "Zurich", "日内瓦": "Geneva", "斯德哥尔摩": "Stockholm",
+    "哥本哈根": "Copenhagen", "赫尔辛基": "Helsinki", "雅典": "Athens",
+    "里斯本": "Lisbon", "莫斯科": "Moscow", "伊斯坦布尔": "Istanbul",
+    "Dubrovnik": "Dubrovnik", "Santorini": "Santorini", "Mykonos": "Mykonos",
+    "France": "France", "Italy": "Italy", "Spain": "Spain", "Germany": "Germany",
+    "United Kingdom": "UK", "Greece": "Greece", "Portugal": "Portugal",
+    "Netherlands": "Netherlands", "Switzerland": "Switzerland", "Austria": "Austria",
+    "Czech Republic": "Czechia", "Sweden": "Sweden", "Denmark": "Denmark",
+    "Norway": "Norway", "Finland": "Finland", "Russia": "Russia", "Turkey": "Turkey",
+    // 北美
+    "纽约": "New York", "洛杉矶": "Los Angeles", "旧金山": "San Francisco",
+    "芝加哥": "Chicago", "拉斯维加斯": "Las Vegas", "迈阿密": "Miami",
+    "华盛顿": "Washington D.C.", "波士顿": "Boston", "西雅图": "Seattle",
+    "夏威夷": "Hawaii", "多伦多": "Toronto", "温哥华": "Vancouver",
+    "蒙特利尔": "Montreal", "墨西哥": "Mexico", "坎昆": "Cancun",
+    "USA": "USA", "Canada": "Canada", "Mexico": "Mexico",
+    // 大洋洲
+    "悉尼": "Sydney", "墨尔本": "Melbourne", "奥克兰": "Auckland",
+    "Australia": "Australia", "New Zealand": "New Zealand",
+    // 中东/非洲
+    "迪拜": "Dubai", "阿布扎比": "Abu Dhabi", "开罗": "Cairo",
+    "毛里求斯": "Mauritius", "马尔代夫": "Maldives", "塞舌尔": "Seychelles",
+    "南非": "South Africa", "肯尼亚": "Kenya", "摩洛哥": "Morocco",
+    // 南美
+    "里约": "Rio", "圣保罗": "São Paulo", "布宜诺斯艾利斯": "Buenos Aires",
+    "秘鲁": "Peru", "智利": "Chile", "阿根廷": "Argentina", "巴西": "Brazil"
   };
+
+  function toPinyin(text) {
+    if (!text) return "Unknown";
+    if (LOC_EN[text]) return LOC_EN[text];
+    if (/^[\x00-\x7F]+$/.test(text)) return text;
+    const PY = {
+      "阿":"A","安":"An","澳":"Ao","八":"Ba","白":"Bai","百":"Bai","半":"Ban","包":"Bao","宝":"Bao","北":"Bei","本":"Ben","碧":"Bi","冰":"Bing","波":"Bo","伯":"Bo","博":"Bo","不":"Bu","才":"Cai","仓":"Cang","长":"Chang","朝":"Chao","成":"Cheng","城":"Cheng","池":"Chi","赤":"Chi","楚":"Chu","川":"Chuan","春":"Chun","慈":"Ci","翠":"Cui","村":"Cun","达":"Da","大":"Da","丹":"Dan","岛":"Dao","道":"Dao","德":"De","迪":"Di","地":"Di","典":"Dian","甸":"Dian","东":"Dong","冬":"Dong","都":"Du","度":"Du","敦":"Dun","多":"Duo","俄":"E","尔":"Er","法":"Fa","番":"Fan","飞":"Fei","丰":"Feng","凤":"Feng","佛":"Fo","福":"Fu","抚":"Fu","阜":"Fu","甘":"Gan","冈":"Gang","港":"Gang","高":"Gao","格":"Ge","根":"Gen","古":"Gu","谷":"Gu","关":"Guan","光":"Guang","广":"Guang","贵":"Gui","桂":"Gui","国":"Guo","哈":"Ha","海":"Hai","邯":"Han","韩":"Han","汉":"Han","杭":"Hang","好":"Hao","合":"He","和":"He","河":"He","鹤":"He","黑":"Hei","衡":"Heng","红":"Hong","洪":"Hong","湖":"Hu","虎":"Hu","花":"Hua","华":"Hua","化":"Hua","淮":"Huai","皇":"Huang","黄":"Huang","惠":"Hui","吉":"Ji","济":"Ji","集":"Ji","加":"Jia","嘉":"Jia","尖":"Jian","建":"Jian","江":"Jiang","焦":"Jiao","金":"Jin","津":"Jin","锦":"Jin","晋":"Jin","京":"Jing","景":"Jing","九":"Jiu","酒":"Jiu","居":"Ju","喀":"Ka","开":"Kai","坎":"Kan","康":"Kang","克":"Ke","昆":"Kun","拉":"La","莱":"Lai","兰":"Lan","廊":"Lang","老":"Lao","乐":"Le","雷":"Lei","梨":"Li","丽":"Li","利":"Li","历":"Li","连":"Lian","莲":"Lian","良":"Liang","凉":"Liang","辽":"Liao","林":"Lin","临":"Lin","灵":"Ling","柳":"Liu","六":"Liu","龙":"Long","隆":"Long","陇":"Long","庐":"Lu","鲁":"Lu","陆":"Lu","鹿":"Lu","吕":"Lu","洛":"Luo","马":"Ma","玛":"Ma","麦":"Mai","满":"Man","芒":"Mang","茂":"Mao","眉":"Mei","梅":"Mei","蒙":"Meng","孟":"Meng","弥":"Mi","密":"Mi","绵":"Mian","苗":"Miao","庙":"Miao","闽":"Min","明":"Ming","鸣":"Ming","莫":"Mo","墨":"Mo","漠":"Mo","牟":"Mu","牡":"Mu","木":"Mu","沐":"Mu","那":"Na","南":"Nan","内":"Nei","尼":"Ni","宁":"Ning","农":"Nong","怒":"Nu","诺":"Nuo","攀":"Pan","盘":"Pan","平":"Ping","莆":"Pu","濮":"Pu","普":"Pu","七":"Qi","齐":"Qi","奇":"Qi","棋":"Qi","黔":"Qian","桥":"Qiao","秦":"Qin","青":"Qing","清":"Qing","琼":"Qiong","丘":"Qiu","曲":"Qu","泉":"Quan","日":"Ri","荣":"Rong","容":"Rong","融":"Rong","如":"Ru","汝":"Ru","瑞":"Rui","萨":"Sa","三":"San","桑":"Sang","山":"Shan","汕":"Shan","商":"Shang","上":"Shang","韶":"Shao","邵":"Shao","深":"Shen","沈":"Shen","十":"Shi","石":"Shi","寿":"Shou","双":"Shuang","水":"Shui","顺":"Shun","四":"Si","松":"Song","苏":"Su","宿":"Su","绥":"Sui","随":"Sui","遂":"Sui","太":"Tai","泰":"Tai","唐":"Tang","桃":"Tao","天":"Tian","铁":"Tie","通":"Tong","同":"Tong","铜":"Tong","图":"Tu","吐":"Tu","万":"Wan","潍":"Wei","威":"Wei","温":"Wen","文":"Wen","翁":"Weng","乌":"Wu","吴":"Wu","梧":"Wu","武":"Wu","五":"Wu","婺":"Wu","西":"Xi","锡":"Xi","溪":"Xi","厦":"Xia","仙":"Xian","咸":"Xian","香":"Xiang","湘":"Xiang","襄":"Xiang","孝":"Xiao","新":"Xin","信":"Xin","兴":"Xing","邢":"Xing","徐":"Xu","许":"Xu","宣":"Xuan","雪":"Xue","雅":"Ya","烟":"Yan","延":"Yan","盐":"Yan","燕":"Yan","扬":"Yang","阳":"Yang","伊":"Yi","宜":"Yi","益":"Yi","银":"Yin","鹰":"Ying","营":"Ying","永":"Yong","榆":"Yu","渝":"Yu","玉":"Yu","元":"Yuan","岳":"Yue","云":"Yun","运":"Yun","枣":"Zao","张":"Zhang","漳":"Zhang","肇":"Zhao","浙":"Zhe","镇":"Zhen","郑":"Zheng","芝":"Zhi","中":"Zhong","舟":"Zhou","珠":"Zhu","株":"Zhu","驻":"Zhu","庄":"Zhuang","淄":"Zi","自":"Zi","遵":"Zun",
+      "芭":"Ba","厘":"Li","首":"Shou","釜":"Fu","仁":"Ren","曼":"Man","迈":"Mai","提":"Ti","坡":"Po","滩":"Tan","岘":"Xian","暹":"Xian","粒":"Li","边":"Bian","仰":"Yang","黎":"Li","伦":"Lun","柏":"Bai","慕":"Mu","纳":"Na","姆":"Mu","坦":"Tan","纽":"Niu","约":"Yue","杉":"Shan","矶":"Ji","旧":"Jiu","盛":"Sheng","顿":"Dun","士":"Shi","悉":"Xi","扎":"Zha","求":"Qiu","舌":"She","拜":"Bai","夷":"Yi","葡":"Pu","萄":"Tao","牙":"Ya","匈":"Xiong","利":"Li","挪":"Nuo","冰":"Bing","爱":"Ai","比":"Bi","荷":"He","卢":"Lu","森":"Sen","堡":"Bao","腊":"La","捷":"Jie","斯":"Si","伐":"Fa","克":"Ke","波":"Bo","兰":"Lan","乌克兰":"WuKeLan","以":"Yi","色":"Se","列":"Lie","埃":"Ai","及":"Ji","肯":"Ken","尼":"Ni","南非":"NanFei","巴西":"BaXi","阿根廷":"Agenting","秘":"Bi","鲁":"Lu","智":"Zhi","哥":"Ge","斯":"Si","达":"Da","黎":"Li","斐":"Fei","济":"Ji","汤":"Tang","加":"Jia","拿":"Na","澳":"Ao","新西兰":"XinXiLan","斐":"Fei","济":"Ji","大溪地":"DaXiDi","关":"Guan","塞":"Sai","班":"Ban","牙":"Ya","古":"Gu","巴":"Ba","哈":"Ha","瓦":"Wa","那":"Na","苏":"Su","黎":"Li","世":"Shi","帕":"Pa","劳":"Lao","文":"Wen","莱":"Lai","西":"Xi","亚":"Ya","缅":"Mian","甸":"Dian","老":"Lao","挝":"Wo","不":"Bu","丹":"Dan","尼":"Ni","泊":"Bo","尔":"Er","孟":"Meng","加":"Jia","拉":"La","国":"Guo","斯":"Si","里":"Li","兰":"Lan","卡":"Ka","塔":"Ta"
+    };
+    let result = "";
+    for (const ch of text) {
+      const p = PY[ch];
+      if (p) {
+        result += p;
+      } else if (ch.charCodeAt(0) >= 0x4E00 && ch.charCodeAt(0) <= 0x9FFF) {
+        result += ch;
+      } else {
+        result += ch;
+      }
+    }
+    return result || text;
+  }
+
+  let cn, en;
+  if (criterion === "time") {
+    const key = collection.spine || "";
+    const match = key.match(/^(\d{4})\.(\d{2})$/);
+    if (match) {
+      const mi = Number(match[2]) - 1;
+      cn = `${match[1]}年${Number(match[2])}月`;
+      en = `${MONTHS[mi] || ""} ${match[1]}`;
+    } else {
+      cn = collection.title || "未知时间";
+      en = key || "Unknown";
+    }
+  } else if (criterion === "location") {
+    cn = collection.title || "未知地点";
+    en = toPinyin(collection.title) || "Unknown";
+  } else {
+    cn = collection.title || "暖色";
+    en = collection.spine || "WARM";
+  }
+
+  return [cn, cn, en, en];
 }
 
-function formatMainSpine(main, photo, criterion) {
-  if (criterion === "location") return romanizeLocation(photo?.locationLabel || main || "未知地点");
-  if (criterion === "time") return photo?.timeKey && photo.timeKey !== "unknown-time" ? photo.timeKey : main || "未知时间";
-  return String(main || "MIXED").replace(/\s+/g, " ").trim().toUpperCase();
-}
-
-function romanizeLocation(value) {
-  const map = {
-    北京: "BeiJing",
-    上海: "ShangHai",
-    广东: "GuangDong",
-    四川: "SiChuan",
-    浙江: "ZheJiang",
-    江苏: "JiangSu",
-    云南: "YunNan",
-    福建: "FuJian",
-    山东: "ShanDong",
-    陕西: "ShaanXi",
-    中国: "China",
-    未知地点: "Unknown"
-  };
-  return map[value] || String(value || "Unknown");
-}
 
 function makeTextTexture(collection, mode) {
   return makeSideTexture(collection, mode === "spine" ? collection.spine : collection.title, mode, mode === "spine");
 }
 
-function makeSideTexture(collection, label, mode, emphasis = false) {
+function makeSideTexture(collection, label, mode, emphasis = false, opposite = false) {
   const canvas = document.createElement("canvas");
   canvas.width = mode === "spine" ? 192 : 768;
   canvas.height = 1024;
@@ -336,23 +422,23 @@ function makeSideTexture(collection, label, mode, emphasis = false) {
   c.textBaseline = "middle";
   c.fillStyle = collection.palette.text;
   c.textAlign = "center";
-  c.font = `${emphasis ? 950 : 850} ${mode === "spine" ? (emphasis ? 43 : 34) : (emphasis ? 54 : 42)}px Arial, sans-serif`;
-  c.fillText(label, 0, 0, canvas.height - 280);
-  c.fillStyle = collection.palette.text;
-  c.globalAlpha = emphasis ? 0.86 : 0.56;
-  c.font = "800 32px Arial, sans-serif";
-  c.textAlign = "right";
-  c.fillText(collection.cornerLabel || "CD", canvas.height / 2 - 52, 0, 190);
-  c.globalAlpha = 1;
+  c.font = `${emphasis ? 700 : 500} ${mode === "spine" ? (emphasis ? 48 : 44) : (emphasis ? 56 : 44)}px "Helvetica Neue", "PingFang SC", Helvetica, "Songti SC", Georgia, serif`;
+  c.fillText(label, 0, 0, canvas.height - 200);
   c.restore();
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 8;
+  if (opposite) {
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(1, -1);
+    texture.offset.set(0, 1);
+  }
   return texture;
 }
 
-function makeFrontSpineTexture(collection, label = collection.spine, emphasis = false) {
+function makeFrontSpineTexture(collection, label = collection.spine, emphasis = false, opposite = false) {
   const canvas = document.createElement("canvas");
   canvas.width = 1024;
   canvas.height = 128;
@@ -369,15 +455,17 @@ function makeFrontSpineTexture(collection, label = collection.spine, emphasis = 
   c.fillStyle = collection.palette.text;
   c.textAlign = "center";
   c.textBaseline = "middle";
-  c.font = `${emphasis ? 950 : 850} ${emphasis ? 46 : 36}px Arial, sans-serif`;
-  c.fillText(label, canvas.width / 2, canvas.height / 2 + 4, canvas.width - 160);
-  c.fillStyle = "rgba(255,255,255,.58)";
-  c.font = "800 28px Arial, sans-serif";
-  c.fillText(collection.cornerLabel || "CD", 92, canvas.height / 2 + 4, 150);
-  c.fillText(collection.title, canvas.width - 130, canvas.height / 2 + 4, 220);
+  c.font = `${emphasis ? 700 : 500} ${emphasis ? 52 : 44}px "Helvetica Neue", "PingFang SC", Helvetica, "Songti SC", Georgia, serif`;
+  c.fillText(label, canvas.width / 2, canvas.height / 2 + 4, canvas.width - 80);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 8;
+  if (opposite) {
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(1, -1);
+    texture.offset.set(0, 1);
+  }
   return texture;
 }
 
@@ -472,6 +560,7 @@ function resize() {
   app.camera.lookAt(0, 0, 0);
   app.camera.updateProjectionMatrix();
   syncPresentationClass();
+  updateTabIndicator();
   drawDetail();
 }
 
@@ -482,29 +571,74 @@ function setupEvents() {
   sceneCanvas.addEventListener("pointerup", onPointerUp, { passive: true });
   sceneCanvas.addEventListener("pointercancel", () => { app.drag = null; }, { passive: true });
   sceneCanvas.addEventListener("wheel", onWheel, { passive: false });
-  importBtn.addEventListener("click", () => openImportModal());
+  importBtn.addEventListener("click", () => filePicker.click());
   deleteCdBtn.addEventListener("click", deleteCurrentCollection);
-  chooseFilesBtn.addEventListener("click", () => filePicker.click());
-  cancelImportBtn.addEventListener("click", () => closeImportModal());
-  criterionButtons.forEach((button) => button.addEventListener("click", () => selectImportCriterion(button.dataset.criterion)));
+  tabButtons.forEach((button) => button.addEventListener("click", () => switchTab(button.dataset.tab)));
   backBtn.addEventListener("click", () => closeDetail());
-  filePicker.addEventListener("change", () => handleFiles(filePicker.files, app.pendingCriterion));
+  filePicker.addEventListener("change", () => handleFiles(filePicker.files));
   drawerGrid.addEventListener("click", onDrawerClick);
+  drawerGrid.addEventListener("mouseover", onDrawerHover);
+  drawerGrid.addEventListener("mouseleave", () => updateCaption());
+  assignLocationBtn.addEventListener("click", () => openLocationModal());
+  saveLocationBtn.addEventListener("click", () => saveLocationAssignment());
+  cancelLocationBtn.addEventListener("click", () => closeLocationModal());
 }
 
-function openImportModal() {
-  app.pendingCriterion = app.currentCriterion || "palette";
-  selectImportCriterion(app.pendingCriterion);
-  importModal.classList.add("open");
+function switchTab(criterion) {
+  if (!["palette", "location", "time"].includes(criterion) || criterion === app.currentCriterion) return;
+  app.currentCriterion = criterion;
+  tabButtons.forEach((button) => button.classList.toggle("active", button.dataset.tab === criterion));
+  updateTabIndicator();
+  regroupCollections(criterion, null, false);
+  saveUserLibrary();
 }
 
-function closeImportModal() {
-  importModal.classList.remove("open");
+function updateTabIndicator() {
+  const active = tabBar.querySelector("button.active");
+  if (!active || !tabIndicator) return;
+  const barRect = tabBar.getBoundingClientRect();
+  const btnRect = active.getBoundingClientRect();
+  tabIndicator.style.width = `${btnRect.width * 0.52}px`;
+  tabIndicator.style.left = `${btnRect.left - barRect.left + (btnRect.width - btnRect.width * 0.52) / 2}px`;
 }
 
-function selectImportCriterion(criterion) {
-  app.pendingCriterion = ["palette", "location", "time"].includes(criterion) ? criterion : "palette";
-  criterionButtons.forEach((button) => button.classList.toggle("active", button.dataset.criterion === app.pendingCriterion));
+function updateAssignLocationBtn() {
+  assignLocationBtn.classList.toggle("show", app.currentCriterion === "location" && app.selectedPhotos.size > 0);
+}
+
+function openLocationModal() {
+  locationInput.value = "";
+  locationModal.classList.add("open");
+  locationInput.focus();
+}
+
+function closeLocationModal() {
+  locationModal.classList.remove("open");
+}
+
+function saveLocationAssignment() {
+  const locationName = locationInput.value.trim();
+  if (!locationName) return;
+  const collection = collections[app.drawerIndex];
+  if (!collection) {
+    console.warn("No collection at drawerIndex", app.drawerIndex);
+    return;
+  }
+  const locationKey = "loc-manual-" + encodeURIComponent(locationName.toLowerCase());
+  app.selectedPhotos.forEach((photoIndex) => {
+    const photo = collection.photos[photoIndex];
+    if (photo) {
+      if (!photo.manualGroupByCriterion) photo.manualGroupByCriterion = {};
+      photo.manualGroupByCriterion.location = { key: locationKey, title: locationName };
+      photo.locationLabel = locationName;
+      photo.locationKey = locationKey;
+      photo.locationSource = "manual";
+    }
+  });
+  closeLocationModal();
+  app.selectedPhotos.clear();
+  regroupCollections(app.currentCriterion, locationKey, true);
+  saveUserLibrary();
 }
 
 function onPointerDown(event) {
@@ -588,9 +722,13 @@ function pickGroup(x, y) {
 
 function updateCaption() {
   const c = collections[app.selectedIndex] || collections[0];
-  if (!c) return;
+  if (!c) {
+    captionTitle.textContent = "";
+    captionMeta.textContent = "";
+    return;
+  }
   captionTitle.textContent = c.title;
-  captionMeta.textContent = `${c.photos.length} 张 · ${getCriterionLabel(app.currentCriterion)} · ${c.tags.join(" / ")}`;
+  captionMeta.textContent = String(c.photos.length);
   syncPresentationClass();
 }
 
@@ -611,15 +749,18 @@ function hidePresentation() {
 
 function syncPresentationClass() {
   const collection = collections[app.selectedIndex] || collections[0];
-  const presenting = Boolean(app.flippedId && innerHeight >= innerWidth);
+  const presenting = Boolean(app.flippedId && innerHeight >= innerWidth && collection);
   document.body.classList.toggle("presenting", presenting);
-  if (albumTitleLayer) albumTitleLayer.querySelector("strong").textContent = collection.title;
-  updateTitlePlane(collection);
+  if (collection && albumTitleLayer) albumTitleLayer.querySelector("strong").textContent = collection.title;
+  if (collection) updateTitlePlane(collection);
 }
 
 function renderDrawer(index) {
   const collection = collections[index] || collections[0];
   if (!collection) return;
+  app.drawerIndex = index;
+  app.selectedPhotos.clear();
+  updateAssignLocationBtn();
   drawerTitle.textContent = collection.title;
   drawerMeta.textContent = `${collection.photos.length} 张`;
   drawerGrid.replaceChildren();
@@ -639,13 +780,15 @@ function renderDrawer(index) {
 
 function getPhotoDrawerLabel(photo) {
   if (!photo) return "";
-  if (app.currentCriterion === "location") return `${photo.locationLabel || "未知地点"} · ${photo.paletteLabel}`;
-  if (app.currentCriterion === "time") return `${photo.timeLabel || "未知时间"} · ${photo.paletteLabel}`;
-  return `${photo.paletteLabel} · ${photo.sceneLabel}`;
+  if (app.currentCriterion === "location") return photo.locationLabel || "未知地点";
+  if (app.currentCriterion === "time") return photo.timeLabel || "未知时间";
+  return photo.paletteLabel;
 }
 
 function hideDrawer() {
   photoDrawer.classList.remove("open");
+  app.selectedPhotos.clear();
+  updateAssignLocationBtn();
 }
 
 function deleteCurrentCollection() {
@@ -659,9 +802,7 @@ async function deleteCurrentCollectionAsync() {
   allPhotos = allPhotos.filter((photo) => !ids.has(photo.id));
   app.flippedId = null;
   if (!allPhotos.length) {
-    app.hasUserPhotos = false;
     await removeStoredLibrary();
-    seedSamples();
   } else {
     await saveUserLibrary();
   }
@@ -672,11 +813,30 @@ async function deleteCurrentCollectionAsync() {
 function onDrawerClick(event) {
   const button = event.target.closest(".photo-thumb");
   if (!button) return;
-  app.drawerPhoto = Number(button.dataset.photoIndex || 0);
+  const photoIndex = Number(button.dataset.photoIndex || 0);
+  if (app.currentCriterion === "location") {
+    if (app.selectedPhotos.has(photoIndex)) {
+      app.selectedPhotos.delete(photoIndex);
+      button.classList.remove("selected");
+    } else {
+      app.selectedPhotos.add(photoIndex);
+      button.classList.add("selected");
+    }
+    updateAssignLocationBtn();
+    return;
+  }
+  app.drawerPhoto = photoIndex;
   app.detailPhoto = app.drawerPhoto;
   drawerGrid.querySelectorAll(".photo-thumb").forEach((item, index) => {
     item.classList.toggle("active", index === app.drawerPhoto);
   });
+}
+
+function onDrawerHover(event) {
+  const button = event.target.closest(".photo-thumb");
+  if (!button) return;
+  const photoIndex = Number(button.dataset.photoIndex || 0);
+  captionMeta.textContent = String(photoIndex + 1);
 }
 
 function openDetail(index) {
@@ -696,7 +856,8 @@ function closeDetail() {
 
 function buildCollections(criterion) {
   const groups = new Map();
-  allPhotos.forEach((photo) => {
+  const filtered = allPhotos.filter((photo) => (photo.criterionSource || "palette") === criterion);
+  filtered.forEach((photo) => {
     const groupInfo = classifyPhoto(photo, criterion);
     if (!groups.has(groupInfo.key)) {
       groups.set(groupInfo.key, {
@@ -711,7 +872,7 @@ function buildCollections(criterion) {
     .sort((a, b) => String(a.info.sortValue).localeCompare(String(b.info.sortValue), "zh-Hans-CN"))
     .map(({ info, photos }) => {
       const firstColor = photos[0]?.dominantColor || "#8a6a55";
-      return makeCollection(info.key, info.title, info.spine, makeAdaptivePalette(firstColor), info.tags, photos, criterion);
+      return makeCollection(info.key, info.title, info.spine, makeAdaptivePalette(firstColor), photos, criterion);
     });
 }
 
@@ -773,7 +934,6 @@ function drawDetail() {
     for (let y = 30; y < panelH; y += 42) ctx.fillRect(0, y, w, 1);
     text(ctx, "CHAPTER " + String(app.detailCollection + 1).padStart(2, "0") + " · CONTACT SHEET", 28, 52, 10, "rgba(20,10,8,.56)", 900);
     text(ctx, collection.title, 28, 128, clamp(w * 0.16, 50, 76), "#120908", 900, "left", "Impact, Arial Black");
-    text(ctx, collection.tags.join(" · "), 30, 206, 18, "#fff0ba", 800, "left", "Georgia");
     drawCoverImage(ctx, photo.source, 0, panelH, w, h - panelH - 104);
     drawPhotoMeta(ctx, photo, 0, panelH, w, h - panelH - 104);
     drawStrip(ctx, collection, 0, h - 104, w, 104);
@@ -783,7 +943,6 @@ function drawDetail() {
     ctx.fillRect(0, 0, leftW, h);
     text(ctx, "CHAPTER " + String(app.detailCollection + 1).padStart(2, "0"), 34, 76, 11, "rgba(20,10,8,.56)", 900);
     text(ctx, collection.title, 34, 160, clamp(leftW * 0.18, 52, 90), "#120908", 900, "left", "Impact, Arial Black");
-    text(ctx, collection.tags.join(" · "), 38, 250, 18, "#fff0ba", 800, "left", "Georgia");
     drawCoverImage(ctx, photo.source, leftW, 0, w - leftW, h);
     drawPhotoMeta(ctx, photo, leftW, 0, w - leftW, h);
   }
@@ -796,7 +955,6 @@ function drawPhotoMeta(ctx, photo, x, y, w, h) {
   ctx.fillStyle = grd;
   ctx.fillRect(x, y, w, h);
   text(ctx, photo.name, x + 26, y + h - 68, 22, "#fff8ec", 900, "left", "Georgia");
-  text(ctx, `${photo.paletteLabel} · ${photo.sceneLabel}`, x + 26, y + h - 38, 12, "rgba(255,248,236,.72)", 800);
   text(ctx, String(app.detailPhoto + 1).padStart(2, "0"), x + w - 24, y + h - 36, clamp(w * .12, 48, 86), "rgba(255,248,236,.92)", 900, "right", "Impact");
 }
 
@@ -827,15 +985,13 @@ async function restoreSavedLibrary() {
       restored.push({
         ...item,
         source,
-        isSample: false,
         thumbUrl: ""
       });
     }
     if (!restored.length) return false;
     allPhotos = restored;
-    app.hasUserPhotos = true;
     app.currentCriterion = ["palette", "location", "time"].includes(saved.currentCriterion) ? saved.currentCriterion : "palette";
-    app.pendingCriterion = app.currentCriterion;
+    tabButtons.forEach((button) => button.classList.toggle("active", button.dataset.tab === app.currentCriterion));
     return true;
   } catch (err) {
     console.warn("Saved library restore failed", err);
@@ -847,13 +1003,12 @@ async function restoreSavedLibrary() {
 async function saveUserLibrary() {
   try {
     const photos = allPhotos
-      .filter((photo) => !photo.isSample)
       .slice(0, 60)
       .map((photo) => ({
         id: photo.id,
-        isSample: false,
         name: photo.name,
         storedDataUrl: photo.storedDataUrl || sourceToStorageDataUrl(photo.source),
+        criterionSource: photo.criterionSource || "palette",
         paletteKey: photo.paletteKey,
         paletteLabel: photo.paletteLabel,
         sceneLabel: photo.sceneLabel,
@@ -867,7 +1022,7 @@ async function saveUserLibrary() {
         deviceLabel: photo.deviceLabel,
         deviceKey: photo.deviceKey,
         gps: photo.gps || null,
-        manualGroupByCriterion: {}
+        manualGroupByCriterion: photo.manualGroupByCriterion || {}
       }));
     if (!photos.length) {
       await removeStoredLibrary();
@@ -948,91 +1103,8 @@ function requestToPromise(request) {
   });
 }
 
-function seedSamples() {
-  ["warm", "blue", "green", "night", "paper", "unknown"].forEach((kind) => {
-    for (let i = 0; i < 3; i += 1) {
-      const source = createSample(kind, i);
-      const analysis = analyzePalette(source);
-      allPhotos.push({
-        id: `sample-${kind}-${i}`,
-        isSample: true,
-        name: `${analysis.paletteLabel.replace(/..$/, "")} ${String(i + 1).padStart(2, "0")}`,
-        source,
-        paletteKey: analysis.collectionId,
-        paletteLabel: analysis.paletteLabel,
-        sceneLabel: analysis.sceneLabel,
-        dominantColor: analysis.dominantColor,
-        timeLabel: "样例时间",
-        timeKey: "sample-time",
-        timeSource: "sample",
-        locationLabel: "未知地点",
-        locationKey: "unknown-location",
-        locationSource: "sample",
-        deviceLabel: "样例设备",
-        deviceKey: "sample-device",
-        manualGroupByCriterion: {}
-      });
-    }
-  });
-}
-
-function createSample(kind, variant) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 480;
-  canvas.height = 640;
-  const c = canvas.getContext("2d");
-  const grad = c.createLinearGradient(0, 0, 480, 640);
-  const palettes = {
-    warm: ["#f4b45e", "#d95f39", "#31120f"],
-    blue: ["#8bd2e9", "#3f82a9", "#12334d"],
-    green: ["#b8d88e", "#5e9852", "#102411"],
-    night: ["#161631", "#25175a", "#03020b"],
-    paper: ["#f7f3e9", "#ded6c3", "#b8aa93"],
-    unknown: ["#c4825e", "#745a69", "#171318"]
-  }[kind];
-  grad.addColorStop(0, palettes[0]);
-  grad.addColorStop(.55, palettes[1]);
-  grad.addColorStop(1, palettes[2]);
-  c.fillStyle = grad;
-  c.fillRect(0, 0, 480, 640);
-  if (kind === "warm") {
-    c.fillStyle = "rgba(255,230,160,.72)";
-    c.beginPath(); c.arc(120 + variant * 30, 132, 55, 0, Math.PI * 2); c.fill();
-    c.fillStyle = "rgba(40,18,15,.8)";
-    for (let i = 0; i < 5; i += 1) {
-      c.beginPath(); c.moveTo(-40 + i * 130, 560); c.lineTo(80 + i * 115, 315); c.lineTo(180 + i * 115, 560); c.closePath(); c.fill();
-    }
-  } else if (kind === "blue") {
-    c.fillStyle = "rgba(255,255,255,.55)";
-    for (let i = 0; i < 6; i += 1) { c.beginPath(); c.ellipse(60 + i * 86, 140 + (i % 2) * 28, 48, 14, 0, 0, Math.PI * 2); c.fill(); }
-    c.fillStyle = "#1d4a67"; c.fillRect(0, 400, 480, 240);
-  } else if (kind === "green") {
-    for (let i = 0; i < 18; i += 1) {
-      c.fillStyle = i % 2 ? "#1f5b2e" : "#386f34";
-      const x = (i * 39 + variant * 17) % 480; const h = 230 + ((i * 53) % 180);
-      c.fillRect(x, 640 - h, 22, h); c.beginPath(); c.arc(x + 12, 640 - h + 18, 34, 0, Math.PI * 2); c.fill();
-    }
-  } else if (kind === "night") {
-    for (let i = 0; i < 13; i += 1) {
-      const x = 18 + i * 38; const h = 150 + ((i * 47 + variant * 26) % 290);
-      c.fillStyle = i % 2 ? "#111323" : "#0a0b16"; c.fillRect(x, 640 - h, 30, h);
-      c.fillStyle = i % 3 ? "#f4c257" : "#58d7ff";
-      for (let y = 640 - h + 18; y < 622; y += 34) if ((y + i + variant) % 3) c.fillRect(x + 7, y, 7, 12);
-    }
-  } else if (kind === "paper") {
-    c.fillStyle = "rgba(255,255,255,.82)"; c.fillRect(56, 64, 368, 500);
-    c.fillStyle = "rgba(25,24,20,.55)";
-    for (let i = 0; i < 11; i += 1) c.fillRect(92, 160 + i * 32, 180 + ((i * 47 + variant * 60) % 160), 7);
-  } else {
-    for (let i = 0; i < 28; i += 1) {
-      c.fillStyle = `hsla(${(i * 37 + variant * 40) % 360},48%,${42 + (i % 4) * 8}%,.42)`;
-      c.beginPath(); c.ellipse((i * 61) % 480, (i * 97) % 640, 68, 30, i, 0, Math.PI * 2); c.fill();
-    }
-  }
-  return canvas;
-}
-
-async function handleFiles(files, criterion = "palette") {
+async function handleFiles(files) {
+  const criterion = app.currentCriterion;
   if (!files || !files.length) return;
   const importedPhotos = [];
   const failures = [];
@@ -1044,10 +1116,10 @@ async function handleFiles(files, criterion = "palette") {
       const storedDataUrl = sourceToStorageDataUrl(image);
       importedPhotos.unshift({
         id: `user-${Date.now()}-${Math.random()}`,
-        isSample: false,
         name: cleanName(file.name),
         source: image,
         storedDataUrl,
+        criterionSource: criterion,
         paletteKey: analysis.collectionId,
         paletteLabel: analysis.paletteLabel,
         sceneLabel: analysis.sceneLabel,
@@ -1068,20 +1140,28 @@ async function handleFiles(files, criterion = "palette") {
       continue;
     }
   }
-  closeImportModal();
   filePicker.value = "";
   if (!importedPhotos.length) {
     showNotice(failures[0] || IMPORT_UNREADABLE_TEXT, 4200);
     return;
   }
-  if (!app.hasUserPhotos) {
-    allPhotos = allPhotos.filter((photo) => !photo.isSample);
-    app.hasUserPhotos = true;
-  }
   allPhotos.unshift(...importedPhotos);
-  app.currentCriterion = criterion;
   await saveUserLibrary();
-  regroupCollections(app.currentCriterion, null, false);
+  if (app.currentCriterion === "location") {
+    const importedIds = new Set(importedPhotos.map((p) => p.id));
+    openLocationModal();
+    regroupCollections("location", "unknown-location", true);
+    const ci = app.drawerIndex;
+    const collection = collections[ci];
+    if (collection) {
+      collection.photos.forEach((photo, pi) => {
+        if (importedIds.has(photo.id)) app.selectedPhotos.add(pi);
+      });
+      updateAssignLocationBtn();
+    }
+  } else {
+    regroupCollections(app.currentCriterion, null, false);
+  }
   updateCaption();
   if (failures.length) showNotice(`已导入 ${importedPhotos.length} 张，${failures.length} 张失败：${failures[0]}`, 4200);
 }
@@ -1272,7 +1352,7 @@ function rubberClamp(value, min, max, strength) {
 
 function showError(err) {
   cancelAnimationFrame(app.frame);
-  errorEl.textContent = ERROR_TEXT;
+  errorEl.textContent = err?.message || ERROR_TEXT;
   errorEl.classList.add("show");
   console.error(err);
 }

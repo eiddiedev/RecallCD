@@ -1,10 +1,15 @@
 const PALETTE_GROUPS = {
-  warm: { title: "日光暖调", spine: "WARM", tags: ["暖色", "旅行", "胶片"] },
-  blue: { title: "蓝色旅行", spine: "BLUE", tags: ["冷色", "天空", "远行"] },
-  green: { title: "绿意户外", spine: "GREEN", tags: ["植物", "户外", "自然"] },
-  night: { title: "夜色霓虹", spine: "NIGHT", tags: ["暗调", "城市", "霓虹"] },
-  paper: { title: "纸面截图", spine: "PAPER", tags: ["截图", "文档", "白底"] },
-  unknown: { title: "未知记忆", spine: "MIXED", tags: ["混合", "未识别", "待命名"] }
+  red: { title: "红色", spine: "RED" },
+  orange: { title: "橙色", spine: "ORANGE" },
+  yellow: { title: "黄色", spine: "YELLOW" },
+  green: { title: "绿色", spine: "GREEN" },
+  cyan: { title: "青色", spine: "CYAN" },
+  blue: { title: "蓝色", spine: "BLUE" },
+  purple: { title: "紫色", spine: "PURPLE" },
+  pink: { title: "粉色", spine: "PINK" },
+  warm: { title: "暖色", spine: "WARM" },
+  night: { title: "暗色", spine: "DARK" },
+  paper: { title: "白色", spine: "WHITE" }
 };
 
 const CRITERION_LABELS = {
@@ -25,7 +30,9 @@ export function analyzePalette(source) {
   c.drawImage(source, 0, 0, 64, 64);
   const data = c.getImageData(0, 0, 64, 64).data;
   let r = 0, g = 0, b = 0, n = 0;
-  let dark = 0, white = 0, green = 0, blue = 0;
+  let dark = 0, white = 0;
+  let cntRed = 0, cntOrange = 0, cntYellow = 0, cntGreen = 0;
+  let cntCyan = 0, cntBlue = 0, cntPurple = 0, cntPink = 0;
   let weightedR = 0, weightedG = 0, weightedB = 0, weightSum = 0;
 
   for (let i = 0; i < data.length; i += 16) {
@@ -40,10 +47,20 @@ export function analyzePalette(source) {
 
     r += pr; g += pg; b += pb; n += 1;
     weightedR += pr * weight; weightedG += pg * weight; weightedB += pb * weight; weightSum += weight;
-    if (lum < .22) dark += 1;
-    if (lum > .82 && sat < .22) white += 1;
-    if (pg > pr * 1.1 && pg > pb * 1.05) green += 1;
-    if (pb > pr * 1.1 && pb > pg * .9) blue += 1;
+    if (lum < .22) { dark += 1; continue; }
+    if (lum > .82 && sat < .22) { white += 1; continue; }
+
+    const diff = max - min;
+    if (pg > pr * 1.1 && pg > pb * 1.05) { cntGreen += 1; continue; }
+    if (pb > pr * 1.1 && pb > pg * .92) { cntBlue += 1; continue; }
+    if (diff > 30) {
+      if (pr > pg * 1.3 && pg > pb * 1.1) { cntOrange += 1; continue; }
+      if (pr > pb * 1.2 && pg > pb * 1.1) { cntYellow += 1; continue; }
+    }
+    if (pr > pg * 1.25 && pr > pb * 1.2) { cntRed += 1; continue; }
+    if (pb > pr * 1.1 && pb > pg * 1.05 && pg > pr * .85) { cntPurple += 1; continue; }
+    if (pr > pg * 1.1 && pb > pg * .95) { cntPink += 1; continue; }
+    if (pg > pr * .92 && pb > pr * 1.05) { cntCyan += 1; continue; }
   }
 
   r /= n; g /= n; b /= n;
@@ -53,19 +70,22 @@ export function analyzePalette(source) {
     Math.round(weightedB / weightSum)
   );
 
-  let collectionId = "unknown";
-  let paletteLabel = "混合色系";
-  let sceneLabel = "未知记忆";
+  const colorCounts = [
+    ["green", cntGreen], ["blue", cntBlue], ["red", cntRed], ["orange", cntOrange],
+    ["yellow", cntYellow], ["purple", cntPurple], ["pink", cntPink], ["cyan", cntCyan]
+  ];
+  colorCounts.sort((a, b) => b[1] - a[1]);
+
+  let collectionId = "warm";
+  let paletteLabel = "暖色";
+  let sceneLabel = "";
   if (white / n > .45) {
-    collectionId = "paper"; paletteLabel = "纸面低饱和"; sceneLabel = "截图/文档";
+    collectionId = "paper"; paletteLabel = "白色";
   } else if (dark / n > .44) {
-    collectionId = "night"; paletteLabel = "暗调霓虹"; sceneLabel = "夜景/室内";
-  } else if (green / n > .24) {
-    collectionId = "green"; paletteLabel = "绿色自然"; sceneLabel = "户外/植物";
-  } else if (blue / n > .24) {
-    collectionId = "blue"; paletteLabel = "蓝色冷调"; sceneLabel = "天空/旅行";
-  } else if (r > b && r > g * .82) {
-    collectionId = "warm"; paletteLabel = "暖色胶片"; sceneLabel = "日光/人像";
+    collectionId = "night"; paletteLabel = "暗色";
+  } else if (colorCounts[0][1] / n > .2) {
+    collectionId = colorCounts[0][0];
+    paletteLabel = PALETTE_GROUPS[collectionId].title;
   }
 
   return {
@@ -157,12 +177,12 @@ export function classifyPhoto(photo, criterion) {
     };
   }
 
-  const group = PALETTE_GROUPS[photo.paletteKey] || PALETTE_GROUPS.unknown;
+  const group = PALETTE_GROUPS[photo.paletteKey] || PALETTE_GROUPS.warm;
   return {
-    key: photo.paletteKey || "unknown",
+    key: photo.paletteKey || "warm",
     title: group.title,
     spine: group.spine,
-    tags: group.tags,
+    tags: [],
     sortValue: Object.keys(PALETTE_GROUPS).indexOf(photo.paletteKey),
     criterion: "palette"
   };
@@ -207,20 +227,156 @@ function formatMonth(date) {
   return `${date.getFullYear()}.${pad(date.getMonth() + 1)}`;
 }
 
+function findBox(view, start, end, type) {
+  let off = start;
+  while (off + 8 <= end) {
+    const size = view.getUint32(off, false);
+    if (size < 8 || off + size > end) break;
+    if (readAscii(view, off + 4, 4) === type) return { offset: off, size };
+    off += size;
+  }
+  return null;
+}
+
+function parseHeicExif(view) {
+  const len = view.byteLength;
+  if (len < 12 || readAscii(view, 4, 4) !== "ftyp") return {};
+  const meta = findBox(view, 0, len, "meta");
+  if (!meta) return {};
+  const mStart = meta.offset + 12;
+  const mEnd = meta.offset + meta.size;
+  const hdlr = findBox(view, mStart, mEnd, "hdlr");
+  if (!hdlr || readAscii(view, hdlr.offset + 16, 4) !== "pict") return {};
+  const pitm = findBox(view, mStart, mEnd, "pitm");
+  if (!pitm) return {};
+  const pitmVer = view.getUint8(pitm.offset + 8);
+  const primaryId = pitmVer === 0
+    ? view.getUint16(pitm.offset + 12, false)
+    : view.getUint32(pitm.offset + 12, false);
+  const iinf = findBox(view, mStart, mEnd, "iinf");
+  if (iinf) {
+    const iinfVer = view.getUint8(iinf.offset + 8);
+    const entryCount = iinfVer === 0
+      ? view.getUint16(iinf.offset + 12, false)
+      : view.getUint32(iinf.offset + 12, false);
+    let pos = iinf.offset + (iinfVer === 0 ? 14 : 16);
+    for (let i = 0; i < entryCount && pos + 8 <= iinf.offset + iinf.size; i++) {
+      const boxSize = view.getUint32(pos, false);
+      if (boxSize < 8) break;
+      const boxType = readAscii(view, pos + 4, 4);
+      if (boxType === "infe") {
+        const infeVer = view.getUint8(pos + 8);
+        const iid = infeVer >= 2
+          ? view.getUint32(pos + 12, false)
+          : view.getUint16(pos + 12, false);
+        if (iid === primaryId && infeVer >= 2 && readAscii(view, pos + 18, 4) === "Exif") {
+          const iloc = findBox(view, mStart, mEnd, "iloc");
+          if (iloc) {
+            const ilocVer = view.getUint8(iloc.offset + 8);
+            const sizes = view.getUint16(iloc.offset + 12, false);
+            const offsetBits = (sizes >> 12) & 0xf;
+            const lengthBits = (sizes >> 8) & 0xf;
+            const baseBits = (sizes >> 4) & 0xf;
+            const indexBits = sizes & 0xf;
+            const idBytes = ilocVer < 2 ? 2 : 4;
+            let cur = iloc.offset + 14;
+            const count = ilocVer < 2
+              ? view.getUint16(cur, false)
+              : view.getUint32(cur, false);
+            cur += ilocVer < 2 ? 2 : 4;
+            for (let j = 0; j < count && cur + idBytes + 2 <= iloc.offset + iloc.size; j++) {
+              const itemId = ilocVer < 2
+                ? view.getUint16(cur, false)
+                : view.getUint32(cur, false);
+              cur += idBytes;
+              if (ilocVer === 1 || ilocVer === 2) cur += 2;
+              cur += 2;
+              const bOff = baseBits === 4 ? view.getUint32(cur, false) : baseBits === 2 ? view.getUint16(cur, false) : 0;
+              cur += baseBits === 0 ? 0 : baseBits === 2 ? 2 : baseBits === 4 ? 4 : baseBits === 8 ? 8 : 0;
+              const extentCount = view.getUint16(cur, false);
+              cur += 2;
+              for (let k = 0; k < extentCount; k++) {
+                if (indexBits === 8) cur += 8;
+                else if (indexBits === 4) cur += 4;
+                const extOff = offsetBits === 8
+                  ? Number(view.getBigUint64(cur, false))
+                  : offsetBits === 4 ? view.getUint32(cur, false) : offsetBits === 2 ? view.getUint16(cur, false) : 0;
+                cur += offsetBits === 0 ? 0 : offsetBits === 2 ? 2 : offsetBits === 4 ? 4 : offsetBits === 8 ? 8 : 0;
+                const extLen = lengthBits === 8
+                  ? Number(view.getBigUint64(cur, false))
+                  : lengthBits === 4 ? view.getUint32(cur, false) : lengthBits === 2 ? view.getUint16(cur, false) : 0;
+                cur += lengthBits === 0 ? 0 : lengthBits === 2 ? 2 : lengthBits === 4 ? 4 : lengthBits === 8 ? 8 : 0;
+                if (itemId === iid) {
+                  const absOff = bOff + extOff;
+                  const absEnd = absOff + extLen;
+                  if (absEnd <= len && extLen >= 8) {
+                    for (let s = absOff; s + 2 < absEnd; s++) {
+                      const b0 = view.getUint8(s);
+                      const b1 = view.getUint8(s + 1);
+                      if ((b0 === 0x49 && b1 === 0x49) || (b0 === 0x4D && b1 === 0x4D)) {
+                        if (view.getUint16(s + 2, b0 === 0x49) === 42) {
+                          return readTiff(view, s, absEnd);
+                        }
+                      }
+                    }
+                  }
+                  return {};
+                }
+              }
+            }
+          }
+        }
+      }
+      pos += boxSize;
+    }
+  }
+  return {};
+}
+
+function parseWebpExif(view) {
+  const len = view.byteLength;
+  if (len < 12 || readAscii(view, 0, 4) !== "RIFF" || readAscii(view, 8, 4) !== "WEBP") return {};
+  let off = 12;
+  while (off + 8 <= len) {
+    const chunkId = readAscii(view, off, 4);
+    const chunkSize = view.getUint32(off + 4, true);
+    if (chunkId === "EXIF" && chunkSize >= 8 && off + 8 + chunkSize <= len) {
+      const dataStart = off + 8;
+      const dataEnd = dataStart + chunkSize;
+      for (let s = dataStart; s + 2 < dataEnd; s++) {
+        const b0 = view.getUint8(s);
+        const b1 = view.getUint8(s + 1);
+        if ((b0 === 0x49 && b1 === 0x49) || (b0 === 0x4D && b1 === 0x4D)) {
+          if (dataEnd - s >= 8 && view.getUint16(s + 2, b0 === 0x49) === 42) {
+            return readTiff(view, s, dataEnd);
+          }
+        }
+      }
+      return {};
+    }
+    off += 8 + chunkSize + (chunkSize & 1);
+  }
+  return {};
+}
+
 function parseExif(buffer) {
   const view = new DataView(buffer);
-  if (view.byteLength < 12 || view.getUint16(0) !== 0xffd8) return {};
-
-  let offset = 2;
-  while (offset + 4 < view.byteLength) {
-    if (view.getUint8(offset) !== 0xff) break;
-    const marker = view.getUint8(offset + 1);
-    const size = view.getUint16(offset + 2, false);
-    if (marker === 0xe1 && offset + 10 < view.byteLength && readAscii(view, offset + 4, 6) === "Exif\0\0") {
-      return readTiff(view, offset + 10, offset + 2 + size);
+  if (view.byteLength < 12) return {};
+  if (view.getUint16(0) === 0xffd8) {
+    let offset = 2;
+    while (offset + 4 < view.byteLength) {
+      if (view.getUint8(offset) !== 0xff) break;
+      const marker = view.getUint8(offset + 1);
+      const size = view.getUint16(offset + 2, false);
+      if (marker === 0xe1 && offset + 10 < view.byteLength && readAscii(view, offset + 4, 6) === "Exif\0\0") {
+        return readTiff(view, offset + 10, offset + 2 + size);
+      }
+      offset += 2 + size;
     }
-    offset += 2 + size;
+    return {};
   }
+  if (readAscii(view, 4, 4) === "ftyp") return parseHeicExif(view);
+  if (readAscii(view, 0, 4) === "RIFF" && readAscii(view, 8, 4) === "WEBP") return parseWebpExif(view);
   return {};
 }
 
