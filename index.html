@@ -31,6 +31,24 @@
       outline: none;
       touch-action: none;
     }
+    #bgNoise {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      width: 100vw;
+      height: 100svh;
+      pointer-events: none;
+    }
+    #bgVideo {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      width: 100vw;
+      height: 100svh;
+      object-fit: cover;
+      pointer-events: none;
+      opacity: 0.72;
+    }
     #hud, #detail {
       position: fixed;
       inset: 0;
@@ -453,6 +471,8 @@
   </style>
 </head>
 <body>
+  <video id="bgVideo" src="./视频素材.mp4" muted autoplay loop playsinline webkit-playsinline x5-video-player-type="h5" x5-video-player-fullscreen="false" preload="auto"></video>
+  <canvas id="bgNoise" aria-hidden="true"></canvas>
   <canvas id="scene" aria-label="3D 照片 CD 档案架"></canvas>
   <div id="hud">
     <button id="importBtn" class="import-btn" type="button">导入照片</button>
@@ -498,6 +518,62 @@
   </section>
   <input id="filePicker" class="hidden-file" type="file" accept="image/*,.heic,.heif,image/heic,image/heif" multiple>
   <div id="error" class="error">哎呀，出错了，请重启试试吧~</div>
-  <script type="module" src="./js/main.js?v=py2"></script>
+  <script type="module" src="./js/main.js"></script>
+  <script>(function() {
+  const canvas = document.getElementById("bgNoise");
+  const ctx = canvas.getContext("2d");
+  let frame = 0, w = 0, h = 0;
+  let startTime = 0;
+
+  function resize() {
+    w = Math.max(320, innerWidth);
+    h = Math.max(320, innerHeight);
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + "px";
+    canvas.style.height = h + "px";
+  }
+
+  function draw() {
+    frame++;
+    if (frame % 3 === 0) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const elapsed = startTime ? performance.now() - startTime : 0;
+      const waveOffset = Math.sin(elapsed / 6000 * Math.PI * 2) * canvas.height * 0.08;
+      const glowCY = canvas.height * 0.24 + waveOffset;
+
+      ctx.save();
+      ctx.translate(canvas.width / 2, glowCY);
+      ctx.scale(1.9, 0.42);
+      const r = canvas.width * 0.46;
+      const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+      glow.addColorStop(0, "rgba(42, 37, 32, 0.45)");
+      glow.addColorStop(0.32, "rgba(42, 37, 32, 0.14)");
+      glow.addColorStop(0.68, "rgba(42, 37, 32, 0.03)");
+      glow.addColorStop(1, "rgba(2, 2, 2, 0)");
+      ctx.fillStyle = glow;
+      ctx.fillRect(-canvas.width, -canvas.height * 3, canvas.width * 2, canvas.height * 6);
+      ctx.restore();
+
+      const vig = ctx.createRadialGradient(
+        canvas.width / 2, canvas.height / 2, canvas.width * 0.28,
+        canvas.width / 2, canvas.height / 2, canvas.width * 0.84
+      );
+      vig.addColorStop(0, "rgba(0, 0, 0, 0)");
+      vig.addColorStop(1, "rgba(0, 0, 0, 0.94)");
+      ctx.fillStyle = vig;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    requestAnimationFrame(draw);
+  }
+
+  addEventListener("resize", resize);
+  resize();
+  startTime = performance.now();
+  draw();
+})();</script>
 </body>
 </html>
