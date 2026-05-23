@@ -13,6 +13,7 @@ const detail = document.getElementById("detail");
 const detailCanvas = document.getElementById("detailCanvas");
 const backBtn = document.getElementById("backBtn");
 const errorEl = document.getElementById("error");
+const fmBtn = document.getElementById("fmBtn");
 const captionTitle = document.getElementById("captionTitle");
 const captionMeta = document.getElementById("captionMeta");
 const albumTitleLayer = document.getElementById("albumTitleLayer");
@@ -710,9 +711,19 @@ function setupEvents() {
   vinylStage.addEventListener("pointerup", onVinylPointerUp);
   vinylStage.addEventListener("pointercancel", onVinylPointerUp);
   backBtn.addEventListener("click", () => closeDetail());
+  fmBtn?.addEventListener("click", openFmEntry);
   drawerGrid.addEventListener("click", onDrawerClick);
   drawerGrid.addEventListener("mouseover", onDrawerHover);
   drawerGrid.addEventListener("mouseleave", () => updateCaption());
+}
+
+function openFmEntry() {
+  window.dispatchEvent(new CustomEvent("bside:fm-open", {
+    detail: {
+      selectedCollection: collections[app.selectedIndex]?.id || null,
+      source: "hud-fm-button"
+    }
+  }));
 }
 
 function onPointerDown(event) {

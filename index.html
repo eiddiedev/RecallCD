@@ -96,6 +96,84 @@
       letter-spacing: 0;
     }
     .brand p { display: none; }
+    .fm-btn {
+      position: absolute;
+      top: 48px;
+      right: 22px;
+      z-index: 2;
+      pointer-events: auto;
+      width: 58px;
+      height: 58px;
+      border: 1px solid rgba(244,239,232,.2);
+      border-radius: 50%;
+      padding: 0;
+      display: grid;
+      place-items: center;
+      color: #fff7ea;
+      background: rgba(10,9,8,.58);
+      box-shadow: 0 16px 42px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.12);
+      backdrop-filter: blur(14px);
+      transition: opacity .28s ease, transform .28s ease, border-color .2s ease;
+    }
+    .fm-btn:active {
+      transform: scale(.94);
+      border-color: rgba(244,239,232,.42);
+    }
+    .fm-radio {
+      position: relative;
+      width: 28px;
+      height: 22px;
+      border: 2px solid currentColor;
+      border-radius: 7px;
+      opacity: .94;
+    }
+    .fm-radio::before {
+      content: "";
+      position: absolute;
+      left: 4px;
+      top: -10px;
+      width: 18px;
+      height: 12px;
+      border-top: 2px solid currentColor;
+      border-left: 2px solid currentColor;
+      transform: rotate(20deg);
+      transform-origin: left bottom;
+    }
+    .fm-radio::after {
+      content: "";
+      position: absolute;
+      right: 4px;
+      top: 6px;
+      width: 6px;
+      height: 6px;
+      border: 2px solid currentColor;
+      border-radius: 50%;
+    }
+    .fm-line {
+      position: absolute;
+      left: 5px;
+      top: 7px;
+      width: 10px;
+      height: 2px;
+      border-radius: 2px;
+      background: currentColor;
+      box-shadow: 0 5px 0 currentColor;
+    }
+    .fm-label {
+      position: absolute;
+      bottom: 7px;
+      left: 0;
+      right: 0;
+      font-size: 9px;
+      font-weight: 900;
+      letter-spacing: .06em;
+      text-align: center;
+    }
+    body.presenting .fm-btn {
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(-12px);
+    }
     .back-btn {
       pointer-events: auto;
       border: 0;
@@ -306,6 +384,10 @@
       <h1>B-SIDE</h1>
       <p></p>
     </div>
+    <button id="fmBtn" class="fm-btn" type="button" aria-label="打开 B-SIDE FM" title="B-SIDE FM">
+      <span class="fm-radio" aria-hidden="true"><span class="fm-line"></span></span>
+      <span class="fm-label">FM</span>
+    </button>
     <div class="caption">
       <strong id="captionTitle">暖色</strong>
       <span id="captionMeta">3 张 · 色系</span>
