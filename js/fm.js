@@ -322,13 +322,21 @@ function playSong(idx) {
 
     audio.play();
     document.getElementById("fmPlayerToggle")?.addEventListener("click", () => {
-      if (audio.paused) { audio.play(); }
-      else { audio.pause(); }
+      const toggle = document.getElementById("fmPlayerToggle");
+      if (audio.paused) {
+        audio.play();
+        if (toggle) toggle.innerHTML = "&#9646;&#9646;";
+      } else {
+        audio.pause();
+        if (toggle) toggle.innerHTML = "&#9654;";
+      }
     });
     audio.addEventListener("ended", () => {
       currentPlayingIdx = -1;
       currentAudio = null;
       playerWrap?.classList.remove("open");
+      const toggle = document.getElementById("fmPlayerToggle");
+      if (toggle) toggle.innerHTML = "&#9654;";
       playBtns.forEach(b => b.classList.remove("playing"));
     });
   });

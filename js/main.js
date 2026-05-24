@@ -175,7 +175,7 @@ function makeCaseSideLabels(collection, index) {
   const cnTitle = meta.cn || collection.cnTitle || "音乐内容";
   const volume = `VOL ${Math.max(1, Number(index) + 1 || 1)}`;
   const count = `${collection.photos?.length || 0} songs`;
-  return [cnTitle, volume, title, count];
+  return [volume, title, cnTitle, count];
 }
 
 const CASE_PRESENT_MS = 1080;
@@ -1175,7 +1175,7 @@ function setupEvents() {
     toast._timer = setTimeout(function() {
       toast.style.opacity = "0";
       toast.style.transform = "translate(-50%,-50%) scale(0.9)";
-    }, 2200);
+    }, 3500);
   }
 
   window.addEventListener("bside:classify-add", function(e) {
@@ -1238,8 +1238,16 @@ function setupEvents() {
       };
       if (isVideo) photo.videoUrl = fileUrl;
       allPhotos.push(photo);
-      regroupCollections(app.currentCriterion);
-      showToast("已完成识别，风格为 " + genreDisplay);
+      var targetCollection = null;
+      for (var ci = 0; ci < collections.length; ci++) {
+        if (collections[ci].id === genreKey) { targetCollection = collections[ci]; break; }
+      }
+      if (targetCollection) {
+        targetCollection.photos.push(photo);
+      } else {
+        regroupCollections(app.currentCriterion);
+      }
+      showToast("已识别为 " + genreDisplay + "，已归档到 " + genreDisplay + " CD页");
     }
 
     if (isVideo) {
