@@ -1347,20 +1347,18 @@ function handleCanvasTap(x, y) {
     return;
   }
   const hit = pickGroup(x, y);
-  if (!hit) return;
+  if (!hit) {
+    if (innerWidth > innerHeight && app.flippedId) {
+      app.flippedId = null;
+      hideDrawer();
+      updateCaption();
+    }
+    return;
+  }
   const collection = collections[hit.userData.index];
   app.selectedIndex = hit.userData.index;
   app.targetPosition = app.selectedIndex;
-  if (innerHeight >= innerWidth) {
-    presentCollection(app.selectedIndex);
-    return;
-  }
-  if (app.flippedId === collection.id) return;
-  else {
-    app.flippedId = collection.id;
-    hideDrawer();
-  }
-  updateCaption();
+  presentCollection(app.selectedIndex);
 }
 
 function onWheel(event) {
@@ -1715,6 +1713,7 @@ function syncDetailEntryButton() {
   var discTop = vinyl.vinylY - vinyl.vinylR + 42;
   var ringTop = vinyl.vinylY - vinyl.ringR + 72;
   var y = Math.max(r.y + r.h + 28, Math.min(ringTop, discTop + 34));
+  if (innerWidth > innerHeight) y += 18;
   btn.style.left = (r.x + r.w / 2) + "px";
   btn.style.top = y + "px";
 }
