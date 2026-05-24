@@ -147,6 +147,37 @@ function makeCollection(id, title, spine, palette, photos = [], criterion = "pal
   return collection;
 }
 
+const GENRE_SIDE_META = {
+  jazz: { en: "Jazz", cn: "爵士乐" },
+  hiphop: { en: "Hip-Hop", cn: "嘻哈音乐" },
+  folk: { en: "Folk", cn: "民谣音乐" },
+  electronic: { en: "Electronic", cn: "电子音乐" },
+  cinematic: { en: "Cinematic", cn: "电影音乐" },
+  rnb: { en: "R&B", cn: "蓝调音乐" }
+};
+
+function getCollectionGenreKey(collection) {
+  const text = [collection.id, collection.title, collection.spine].filter(Boolean).join(" ").toLowerCase();
+  const compact = text.replace(/[^a-z0-9]/g, "");
+  if (text.includes("r&b") || compact.includes("rnb") || compact === "rb") return "rnb";
+  if (compact.includes("hiphop")) return "hiphop";
+  if (compact.includes("electronic") || compact.includes("elec")) return "electronic";
+  if (compact.includes("cinematic") || compact.includes("cine")) return "cinematic";
+  if (compact.includes("jazz")) return "jazz";
+  if (compact.includes("folk")) return "folk";
+  return collection.id || compact || "music";
+}
+
+function makeCaseSideLabels(collection, index) {
+  const key = getCollectionGenreKey(collection);
+  const meta = GENRE_SIDE_META[key] || {};
+  const title = meta.en || collection.title || collection.spine || "Music";
+  const cnTitle = meta.cn || collection.cnTitle || "音乐内容";
+  const volume = `VOL ${Math.max(1, Number(index) + 1 || 1)}`;
+  const count = `${collection.photos?.length || 0} songs`;
+  return [cnTitle, volume, title, count];
+}
+
 const CASE_PRESENT_MS = 1080;
 const CASE_OPEN_START_MS = 340;
 const CASE_OPEN_MS = 620;
@@ -452,11 +483,13 @@ function createCaseGroup(collection, index) {
   group.userData = { collectionId: collection.id, index };
 
   const coverTexture = makeCoverTexture(collection);
-  const mainSpineTexture = makeSideTexture(collection, collection.sideLabels[0], "spine", true);
-  const locationSpineTexture = makeSideTexture(collection, collection.sideLabels[1], "spine", true, true);
+  const caseSideLabels = makeCaseSideLabels(collection, index);
+  collection.sideLabels = caseSideLabels;
+  const mainSpineTexture = makeSideTexture(collection, caseSideLabels[0], "spine", true);
+  const locationSpineTexture = makeSideTexture(collection, caseSideLabels[1], "spine", false, true);
   const backTexture = makeTextTexture(collection, "back");
-  const timeSpineTexture = makeFrontSpineTexture(collection, collection.sideLabels[2], false);
-  const deviceSpineTexture = makeFrontSpineTexture(collection, collection.sideLabels[3], false, true);
+  const timeSpineTexture = makeFrontSpineTexture(collection, caseSideLabels[2], false, false);
+  const deviceSpineTexture = makeFrontSpineTexture(collection, caseSideLabels[3], false, true);
   const mainSpineMaterial = new THREE.MeshPhysicalMaterial({
     map: mainSpineTexture,
     metalness: 0,
@@ -806,7 +839,7 @@ function makeSideTexture(collection, label, mode, emphasis = false, opposite = f
 
   c.save();
   c.translate(canvas.width / 2, canvas.height / 2);
-  c.rotate(Math.PI / 2);
+  c.rotate(opposite ? -Math.PI / 2 : Math.PI / 2);
   c.textBaseline = "middle";
   c.fillStyle = collection.palette.text;
   c.textAlign = "center";
@@ -814,16 +847,7 @@ function makeSideTexture(collection, label, mode, emphasis = false, opposite = f
   c.fillText(label, 0, 0, canvas.height - 200);
   c.restore();
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 8;
-  if (opposite) {
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(1, -1);
-    texture.offset.set(0, 1);
-  }
-  return texture;
+  return new THREE.CanvasTexture(canvas);
 }
 
 function makeFrontSpineTexture(collection, label = collection.spine, emphasis = false, opposite = false) {
@@ -831,6 +855,12 @@ function makeFrontSpineTexture(collection, label = collection.spine, emphasis = 
   canvas.width = 1024;
   canvas.height = 128;
   const c = canvas.getContext("2d");
+
+  if (opposite) {
+    c.translate(canvas.width, canvas.height);
+    c.rotate(Math.PI);
+  }
+
   const gradient = c.createLinearGradient(0, 0, canvas.width, 0);
   gradient.addColorStop(0, collection.palette.secondary);
   gradient.addColorStop(0.46, collection.palette.primary);
@@ -845,16 +875,8 @@ function makeFrontSpineTexture(collection, label = collection.spine, emphasis = 
   c.textBaseline = "middle";
   c.font = `${emphasis ? 700 : 500} ${emphasis ? 52 : 44}px "Helvetica Neue", "PingFang SC", Helvetica, "Songti SC", Georgia, serif`;
   c.fillText(label, canvas.width / 2, canvas.height / 2 + 4, canvas.width - 80);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 8;
-  if (opposite) {
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(1, -1);
-    texture.offset.set(0, 1);
-  }
-  return texture;
+
+  return new THREE.CanvasTexture(canvas);
 }
 
 function setCaseLidOpen(group, amount) {
