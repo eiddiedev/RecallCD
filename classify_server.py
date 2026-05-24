@@ -23,16 +23,16 @@ MODEL_ID = "dima806/music_genres_classification"
 
 # GTZAN 10 类 → 目标 6 类映射
 GTZAN_TO_6 = {
-    "jazz":      "Jazz",
-    "hiphop":    "HipHop",
-    "rock":      "Folk",
-    "metal":     "Folk",
-    "blues":     "Jazz",
-    "disco":     "Electronic",
-    "classical": "Classical",
-    "pop":       "Pop",
-    "reggae":    "HipHop",
-    "country":   "Folk",
+    "jazz":      "jazz",
+    "hiphop":    "hiphop",
+    "rock":      "folk",
+    "metal":     "folk",
+    "blues":     "jazz",
+    "disco":     "electronic",
+    "classical": "cinematic",
+    "pop":       "rnb",
+    "reggae":    "hiphop",
+    "country":   "folk",
 }
 
 # ---------- model loading (lazy) ----------

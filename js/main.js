@@ -345,9 +345,27 @@ function seedSamples() {
     { genre: "cinematic", file: "Cinematic1.mp4", author: "@Aiden-Echo", title: "\"是AI也是爱\" 电影her混剪", tags: ["#her", "#电影美学", "#电影感"], music: "汽水音乐: I Love You So", likes: "19.5万", comments: "2559", favorites: "2.8万", shares: "2.7万" }
   ];
 
+  var coverByVideo = {
+    "jazz1.mp4": "jazz1.jpg",
+    "jazz2.mp4": "jazz2.jpg",
+    "jazz3.mp4": "jazz3.jpg",
+    "hiphop1.mp4": "hiphop1.jpg",
+    "hiphop2.mp4": "hiphop2.jpg",
+    "hiphop3.mp4": "hiphop3.jpg",
+    "r&b.mp4": "r&b.jpg",
+    "r&b2.mp4": "r&b2.jpg",
+    "r&b3.mp4": "r&b3.jpg",
+    "Electronic1.mp4": "Electronic1.jpg",
+    "Electronic2.mp4": "Electronic2.jpg",
+    "Electronic3.mp4": "Electronic3.jpg",
+    "Folk1.mp4": "Folk1.png",
+    "Cinematic1.mp4": "Cinematic1.jpg"
+  };
+
   allPhotos = videoSeeds.map(function(vs, i) {
     var g = genres[vs.genre];
     var source = createVideoCover(vs, g);
+    var coverFile = coverByVideo[vs.file] || vs.file.replace(/\.mp4$/, ".jpg");
     return {
       id: "video-" + i,
       name: vs.author + " · " + vs.title,
@@ -371,7 +389,7 @@ function seedSamples() {
         palette: { key: vs.genre, title: g.title, spine: g.spine, primary: g.primary, secondary: g.secondary, text: g.text, coverUrl: g.coverUrl }
       },
       videoUrl: "./assets/videos/" + vs.file,
-      coverUrl: "./assets/covers/" + vs.file.replace(/\.mp4$/, ".jpg"),
+      coverUrl: "./assets/covers/" + coverFile,
       videoAuthor: vs.author,
       videoTitle: vs.title,
       videoTags: vs.tags,
@@ -1140,34 +1158,36 @@ function setupEvents() {
 
   window.addEventListener("bside:classify-add", function(e) {
     var detail = e.detail;
-    var genreKey = detail.genre.toLowerCase();
+    var genreKey = detail.genre.toLowerCase().replace(/[^a-z]/g, "");
+    if (genreKey === "rb") genreKey = "rnb";
     var fileName = detail.fileName;
     var fileUrl = detail.fileUrl;
     var isVideo = detail.isVideo;
 
     var genreTitles = {
       jazz: "Jazz", hiphop: "HipHop", folk: "Folk",
-      electronic: "Electronic", classical: "Classical", pop: "Pop"
+      electronic: "Electronic", cinematic: "Cinematic", rnb: "R&B"
     };
     var genreSpines = {
       jazz: "JAZZ TAPE", hiphop: "HIPHOP TAPE", folk: "FOLK TAPE",
-      electronic: "ELEC TAPE", classical: "CLASSICAL TAPE", pop: "POP TAPE"
+      electronic: "ELEC TAPE", cinematic: "CINE TAPE", rnb: "R&B TAPE"
     };
     var genreStyles = {
       jazz:        { primary: "#1a2840", secondary: "#3a5a80", text: "#d0dce8", coverUrl: "./assets/covers/jazz.png" },
       hiphop:      { primary: "#8a1010", secondary: "#c82020", text: "#f0e0e0", coverUrl: "./assets/covers/hiphop.png" },
       folk:        { primary: "#6a5838", secondary: "#b09870", text: "#f0e8d0", coverUrl: "./assets/covers/folk.png" },
       electronic:  { primary: "#0a2a4a", secondary: "#1890c8", text: "#d0e8f0", coverUrl: "./assets/covers/electronic.png" },
-      classical:   { primary: "#383838", secondary: "#686868", text: "#d0d0d0", coverUrl: "./assets/covers/cinematic.png" },
-      pop:         { primary: "#888888", secondary: "#cccccc", text: "#222222", coverUrl: "./assets/covers/rnb.png" }
+      cinematic:   { primary: "#383838", secondary: "#686868", text: "#d0d0d0", coverUrl: "./assets/covers/cinematic.png" },
+      rnb:         { primary: "#4a2050", secondary: "#9848a0", text: "#f0e8f0", coverUrl: "./assets/covers/rnb.png" }
     };
+    var genreDisplay = genreTitles[genreKey] || genreKey;
 
     function addWithThumb(source) {
       var photo = {
         id: "upload-" + Date.now(),
         name: fileName,
         source: source,
-        paletteLabel: genreTitles[genreKey] || genreKey,
+        paletteLabel: genreDisplay,
         sceneLabel: "",
         paletteKey: genreKey,
         dominantColor: (genreStyles[genreKey] || {}).primary || "#888888",
@@ -1185,7 +1205,7 @@ function setupEvents() {
         manualGroupByCriterion: {
           palette: {
             key: genreKey,
-            title: genreTitles[genreKey] || genreKey,
+            title: genreDisplay,
             spine: genreSpines[genreKey] || genreKey.toUpperCase(),
             primary: (genreStyles[genreKey] || {}).primary || "#888888",
             secondary: (genreStyles[genreKey] || {}).secondary || "#cccccc",
@@ -1197,7 +1217,7 @@ function setupEvents() {
       if (isVideo) photo.videoUrl = fileUrl;
       allPhotos.push(photo);
       regroupCollections(app.currentCriterion);
-      showToast("已完成识别，风格为 " + (genreTitles[genreKey] || genreKey));
+      showToast("已完成识别，风格为 " + genreDisplay);
     }
 
     if (isVideo) {
@@ -1688,6 +1708,17 @@ function syncInlineVideo() {
   el.style.height = r.h + "px";
 }
 
+function syncDetailEntryButton() {
+  var btn = document.getElementById("detailEntryBtn");
+  if (!btn || !btn.classList.contains("show") || !vinyl._previewRect) return;
+  var r = vinyl._previewRect;
+  var discTop = vinyl.vinylY - vinyl.vinylR + 42;
+  var ringTop = vinyl.vinylY - vinyl.ringR + 72;
+  var y = Math.max(r.y + r.h + 28, Math.min(ringTop, discTop + 34));
+  btn.style.left = (r.x + r.w / 2) + "px";
+  btn.style.top = y + "px";
+}
+
 function syncPlayIndicator() {
   var el = document.getElementById("playIndicator");
   if (!el || !vinyl._previewRect || !el.classList.contains("show")) return;
@@ -1710,6 +1741,21 @@ function showPlayIndicator() {
 function hidePlayIndicator() {
   var el = document.getElementById("playIndicator");
   if (el) el.classList.remove("show");
+}
+
+function pointInRect(x, y, rect, pad) {
+  if (!rect) return false;
+  var p = pad || 0;
+  return x >= rect.x - p && x <= rect.x + rect.w + p &&
+    y >= rect.y - p && y <= rect.y + rect.h + p;
+}
+
+function getVinylHitZone(e) {
+  if (vinyl.phase !== VS_CAROUSEL) return "none";
+  if (pointInRect(e.clientX, e.clientY, vinyl._previewRect, 4)) return "preview";
+  var wheelTop = vinyl.vinylY - vinyl.ringR - 56;
+  if (e.clientY >= wheelTop) return "wheel";
+  return "blank";
 }
 
 function playInlineVideo(photo) {
@@ -2364,7 +2410,7 @@ function drawVinylChrome(ctx) {
   ctx.fillStyle = "rgba(255,248,232,.54)";
   ctx.font = "700 11px Arial, PingFang SC, sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText("轻触上方返回", vinyl.w / 2, 28);
+  ctx.fillText("轻触空白返回", vinyl.w / 2, 28);
   ctx.restore();
 }
 
@@ -2401,6 +2447,7 @@ function tickVinyl() {
   ctx.clearRect(0, 0, w, h);
   VinylCarousel(ctx, now, dt);
   syncInlineVideo();
+  syncDetailEntryButton();
   syncPlayIndicator();
 }
 
@@ -2472,12 +2519,14 @@ function useInertiaDrag(e, phase) {
 
 function onVinylPointerDown(e) {
   if (vinyl.phase !== VS_CAROUSEL) return;
-  if (e.clientY < vinyl.h * 0.12) { hidePresentation(); return; }
+  var zone = getVinylHitZone(e);
+  if (zone === "blank") { hidePresentation(); return; }
   e.preventDefault();
   vinyl._tapStartX = e.clientX;
   vinyl._tapStartY = e.clientY;
   vinyl._tapStartTime = performance.now();
   vinyl._tapMoved = false;
+  vinyl._tapZone = zone;
   useInertiaDrag(e, "start");
 }
 
@@ -2497,7 +2546,7 @@ function onVinylPointerUp(e) {
   useInertiaDrag(e, "end");
 
   var dt = performance.now() - (vinyl._tapStartTime || 0);
-  if (!vinyl._tapMoved && dt < 400) {
+  if (!vinyl._tapMoved && dt < 400 && vinyl._tapZone === "preview") {
     var photo = vinyl.photos[vinyl.selectedIndex];
     if (photo && photo.videoUrl) {
       playInlineVideo(photo);
@@ -2508,7 +2557,9 @@ function onVinylPointerUp(e) {
 
 function onVinylClick(e) {
   if (vinyl.phase !== VS_CAROUSEL) return;
-  if (e.clientY < vinyl.h * 0.12) return;
+  var zone = getVinylHitZone(e);
+  if (zone === "blank") { hidePresentation(); return; }
+  if (zone !== "preview") return;
   var now = performance.now();
   if (now - (vinyl._lastVideoOpen || 0) < 500) return;
   var photo = vinyl.photos[vinyl.selectedIndex];

@@ -61,14 +61,14 @@
     #vinylStage.active { display: block; }
     .detail-entry-btn {
       position: fixed;
-      top: 8%;
-      right: 7%;
+      top: 54%;
+      left: 50%;
       z-index: 4;
       pointer-events: auto;
-      padding: 7px 14px;
+      padding: 8px 16px;
       border: 1px solid rgba(255,255,255,.22);
       border-radius: 20px;
-      background: rgba(255,255,255,.18);
+      background: rgba(18,17,16,.62);
       backdrop-filter: blur(10px);
       -webkit-backdrop-filter: blur(10px);
       color: #f4efe8;
@@ -77,11 +77,14 @@
       letter-spacing: .03em;
       cursor: pointer;
       display: none;
+      white-space: nowrap;
+      box-shadow: 0 10px 34px rgba(0,0,0,.38);
+      transform: translateX(-50%);
       transition: opacity .25s ease, transform .18s ease, background .2s;
     }
     .detail-entry-btn.show { display: block; }
     .detail-entry-btn:active {
-      transform: scale(.92);
+      transform: translateX(-50%) scale(.92);
       background: rgba(255,255,255,.28);
     }
     #inlineVideo {
@@ -191,11 +194,11 @@
       background: rgba(255,255,255,.12);
     }
     .fm-logo {
-      width: 22px;
-      height: 22px;
+      width: 20px;
+      height: 20px;
       object-fit: contain;
-      filter: grayscale(1) brightness(1.6) contrast(1.1);
-      opacity: 0.8;
+      filter: none;
+      opacity: 0.92;
     }
     body.presenting .fm-btn, body.presenting .classify-btn {
       opacity: 0;
@@ -463,20 +466,21 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 80px 24px 20px;
+      max-height: 30svh;
+      padding: 50px 24px 16px;
     }
     .fm-hero-logo {
-      width: min(120px, 32vw);
+      width: min(88px, 24vw);
       height: auto;
-      border-radius: 10px;
-      filter: drop-shadow(0 8px 24px rgba(0,0,0,.6));
+      border-radius: 8px;
+      filter: drop-shadow(0 6px 18px rgba(0,0,0,.55));
     }
     .fm-hero-title {
       font-family: Impact, "Arial Black", Arial, sans-serif;
-      font-size: clamp(28px, 8vw, 42px);
+      font-size: clamp(23px, 6.4vw, 34px);
       color: #f3ece1;
       letter-spacing: 0.04em;
-      margin: 18px 0 4px;
+      margin: 10px 0 3px;
       text-align: center;
     }
     .fm-hero-sub {
@@ -488,42 +492,65 @@
     }
     .fm-insight {
       flex-shrink: 0;
-      margin: 8px 24px 8px;
+      max-height: 20svh;
+      margin: 14px 24px 14px;
       padding: 0;
-      border-radius: 14px;
       background: transparent;
       border: none;
+      overflow: hidden;
     }
-    .fm-insight-toggle {
-      display: inline-flex;
+    .fm-ai-dialog {
+      display: flex;
+      align-items: flex-start;
+      padding: 10px 0 11px;
+      border-top: 1px solid rgba(244,239,232,.18);
+      border-bottom: 1px solid rgba(244,239,232,.1);
+      background: rgba(3,4,5,.42);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+    }
+    .fm-ai-copy {
+      min-width: 0;
+      flex: 1;
+    }
+    .fm-ai-name {
+      display: flex;
       align-items: center;
-      gap: 4px;
-      padding: 4px 10px;
-      border: 1px solid rgba(244,239,232,.12);
-      border-radius: 10px;
-      background: rgba(255,255,255,.04);
-      color: rgba(244,239,232,.5);
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 6px;
       font-size: 10px;
-      font-weight: 700;
-      cursor: pointer;
-      transition: background 0.2s, border-color 0.2s;
-    }
-    .fm-insight-toggle:active {
-      background: rgba(255,255,255,.1);
-      border-color: rgba(244,239,232,.25);
-    }
-    .fm-insight-i {
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: rgba(212,168,83,.2);
-      color: #d4a853;
-      font-size: 9px;
       font-weight: 900;
-      font-style: italic;
-      display: grid;
-      place-items: center;
-      line-height: 1;
+      letter-spacing: .14em;
+      color: rgba(244,239,232,.82);
+      text-transform: uppercase;
+    }
+    .fm-ai-status {
+      flex: 0 0 auto;
+      color: rgba(244,239,232,.36);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0;
+      text-transform: none;
+    }
+    .fm-ai-message {
+      margin: 0;
+      min-height: 31px;
+      color: rgba(244,239,232,.7);
+      font-size: 11.5px;
+      line-height: 1.38;
+    }
+    .fm-ai-message.typing::after {
+      content: "";
+      display: inline-block;
+      width: 5px;
+      height: 1em;
+      margin-left: 3px;
+      vertical-align: -2px;
+      background: rgba(244,239,232,.45);
+      animation: fmCursor 0.85s steps(1) infinite;
+    }
+    @keyframes fmCursor {
+      50% { opacity: 0; }
     }
     .fm-popup-mask {
       position: fixed;
@@ -569,7 +596,7 @@
       font-size: 10px;
       font-weight: 900;
       letter-spacing: 0.08em;
-      color: #d4a853;
+      color: rgba(244,239,232,.62);
       text-transform: uppercase;
     }
     .fm-insight-conf {
@@ -593,17 +620,17 @@
       flex: 1;
       overflow-y: auto;
       overflow-x: hidden;
-      padding: 4px 36px 16px;
+      padding: 4px 36px 14px;
       -webkit-overflow-scrolling: touch;
       display: flex;
       flex-direction: column;
       gap: 12px;
     }
     .fm-card {
-      border-radius: 16px;
+      border-radius: 12px;
       padding: 14px 16px;
-      background: rgba(255,255,255,.04);
-      border: 1px solid rgba(244,239,232,.08);
+      background: linear-gradient(180deg, rgba(244,239,232,.055), rgba(244,239,232,.025));
+      border: 1px solid rgba(244,239,232,.1);
       animation: fmCardIn 0.35s ease both;
       animation-delay: var(--delay, 0s);
     }
@@ -637,10 +664,10 @@
       font-size: 10px;
       font-weight: 900;
       letter-spacing: 0.08em;
-      color: #d4a853;
+      color: rgba(244,239,232,.72);
       padding: 2px 8px;
       border-radius: 6px;
-      background: rgba(212,168,83,.12);
+      background: rgba(244,239,232,.075);
     }
     .fm-card-duration {
       font-size: 11px;
@@ -666,9 +693,9 @@
       width: 18px;
       height: 18px;
       border-radius: 50%;
-      border: 1px solid rgba(212,168,83,.3);
-      background: rgba(212,168,83,.1);
-      color: #d4a853;
+      border: 1px solid rgba(244,239,232,.24);
+      background: rgba(244,239,232,.06);
+      color: rgba(244,239,232,.68);
       font-size: 10px;
       font-weight: 900;
       font-style: italic;
@@ -678,7 +705,7 @@
       transition: background 0.2s;
     }
     .fm-card-info-btn:active {
-      background: rgba(212,168,83,.25);
+      background: rgba(244,239,232,.14);
     }
     .fm-card-info-close {
       display: none;
@@ -763,9 +790,9 @@
       width: 36px;
       height: 36px;
       border-radius: 50%;
-      border: 1px solid rgba(212, 168, 83, 0.25);
-      background: rgba(212, 168, 83, 0.1);
-      color: #d4a853;
+      border: 1px solid rgba(244,239,232,.24);
+      background: rgba(244,239,232,.08);
+      color: rgba(244,239,232,.78);
       font-size: 13px;
       display: grid;
       place-items: center;
@@ -774,11 +801,11 @@
     }
     .fm-card-play:active {
       transform: scale(0.9);
-      background: rgba(212, 168, 83, 0.25);
+      background: rgba(244,239,232,.18);
     }
     .fm-card-play.playing {
-      background: rgba(212, 168, 83, 0.3);
-      border-color: rgba(212, 168, 83, 0.5);
+      background: rgba(244,239,232,.2);
+      border-color: rgba(244,239,232,.42);
     }
     .fm-player {
       position: fixed;
@@ -838,9 +865,9 @@
       width: 36px;
       height: 36px;
       border-radius: 50%;
-      border: 1px solid rgba(212,168,83,.25);
-      background: rgba(212,168,83,.1);
-      color: #d4a853;
+      border: 1px solid rgba(244,239,232,.24);
+      background: rgba(244,239,232,.08);
+      color: rgba(244,239,232,.78);
       font-size: 12px;
       display: grid;
       place-items: center;
@@ -860,16 +887,18 @@
     }
     .fm-footer {
       flex-shrink: 0;
-      padding: 10px 20px 80px;
+      padding: 10px 20px calc(18px + env(safe-area-inset-bottom));
       text-align: center;
+      pointer-events: auto;
+      background: linear-gradient(180deg, transparent, rgba(2,2,2,.42) 34%, rgba(2,2,2,.72));
     }
     .fm-redistill {
-      border: 1px solid rgba(244,239,232,.18);
-      border-radius: 22px;
-      padding: 10px 24px;
-      background: rgba(255,255,255,.05);
-      color: rgba(244,239,232,.7);
-      font-size: 13px;
+      border: 1px solid rgba(244,239,232,.2);
+      border-radius: 999px;
+      padding: 9px 22px;
+      background: rgba(244,239,232,.9);
+      color: #080808;
+      font-size: 12px;
       font-weight: 800;
       cursor: pointer;
       transition: background 0.2s, transform 0.15s;
@@ -900,7 +929,7 @@
     .fm-footer-note {
       font-size: 10px;
       color: rgba(244,239,232,.25);
-      margin: 8px 0 0;
+      margin: 6px 0 0;
     }
     .video-player {
       position: fixed;

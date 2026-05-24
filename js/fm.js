@@ -201,6 +201,7 @@ let isDistilling = false;
 let lastCollectionsData = null;
 let dynamicStations = null;
 let currentPlayingIdx = -1;
+let insightTypeTimer = null;
 
 // ── Behavior Tracker ──
 
@@ -478,6 +479,7 @@ function close() {
   const el = document.getElementById("fmOverlay");
   if (el) el.classList.remove("open");
   currentPlayingIdx = -1;
+  clearInsightTyping();
   setTimeout(() => {
     isOpen = false;
     const container = document.getElementById("fmContainer");
@@ -562,28 +564,55 @@ function renderInsight() {
   if (!el) return;
   const station = getStation();
   if (!station) return;
+  const status = station.confidence > 0 ? `置信度 ${station.confidence}%` : "等待蒸馏";
+  const message = station.videos?.length
+    ? (station.insight || `已为你整理 ${station.videos.length} 条推荐。`)
+    : "我是 B-SIDE。读完你的收藏后，会在这里生成更像你的歌单。";
+  clearInsightTyping();
   el.innerHTML = `
-    <button class="fm-insight-toggle" id="fmInsightToggle" aria-label="查看 AI 分析">
-      <span class="fm-insight-ai">AI 分析</span>
-      <span class="fm-insight-i">i</span>
-    </button>
-    <div class="fm-popup-mask" id="fmInsightMask">
-      <div class="fm-popup" id="fmInsightPopup">
-        <div class="fm-insight-header">
-          <span class="fm-insight-ai">AI 分析</span>
-          <span class="fm-insight-conf">${station.confidence > 0 ? `置信度 ${station.confidence}%` : "待蒸馏"}</span>
+    <div class="fm-ai-dialog" aria-label="B-SIDE AI 推荐说明">
+      <div class="fm-ai-copy">
+        <div class="fm-ai-name">
+          <span>B-SIDE</span>
+          <span class="fm-ai-status">${status}</span>
         </div>
-        <p class="fm-insight-text">${station.insight}</p>
-        <p class="fm-insight-scene">${station.scene}</p>
+        <p class="fm-ai-message typing" id="fmAiMessage"></p>
       </div>
     </div>
   `;
-  const toggle = document.getElementById("fmInsightToggle");
-  const mask = document.getElementById("fmInsightMask");
-  toggle?.addEventListener("click", () => mask?.classList.add("open"));
-  mask?.addEventListener("click", (e) => {
-    if (e.target === mask) mask.classList.remove("open");
-  });
+  streamInsightText(message);
+}
+
+function clearInsightTyping() {
+  if (insightTypeTimer) {
+    clearInterval(insightTypeTimer);
+    insightTypeTimer = null;
+  }
+}
+
+function streamInsightText(text) {
+  const target = document.getElementById("fmAiMessage");
+  if (!target) return;
+  const source = String(text || "").trim();
+  if (!source) {
+    target.classList.remove("typing");
+    return;
+  }
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) {
+    target.textContent = source;
+    target.classList.remove("typing");
+    return;
+  }
+  let i = 0;
+  target.textContent = "";
+  insightTypeTimer = setInterval(() => {
+    i = Math.min(source.length, i + 2);
+    target.textContent = source.slice(0, i);
+    if (i >= source.length) {
+      clearInsightTyping();
+      target.classList.remove("typing");
+    }
+  }, 22);
 }
 
 function renderCards() {
