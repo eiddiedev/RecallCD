@@ -545,7 +545,7 @@ function render() {
       <button class="fm-redistill" id="fmRedistill">
         <span class="fm-redistill-icon">&#9881;</span> 重新蒸馏
       </button>
-      <p class="fm-footer-note">基于你的收藏习惯自动生成</p>
+      <p class="fm-footer-note">把音乐视频收藏重组为私人播放线索</p>
     </div>
     <div class="fm-player" id="fmPlayer">
       <div class="fm-player-inner" id="fmPlayerInfo"></div>
@@ -566,8 +566,8 @@ function renderInsight() {
   if (!station) return;
   const status = station.confidence > 0 ? `置信度 ${station.confidence}%` : "等待蒸馏";
   const message = station.videos?.length
-    ? (station.insight || `已为你整理 ${station.videos.length} 条推荐。`)
-    : "我是 B-SIDE。读完你的收藏后，会在这里生成更像你的歌单。";
+    ? `根据你的音乐视频收藏，生成这组私人播放线索。${station.insight ? " " + station.insight : ""}`
+    : "读完你的收藏后，我会生成更像你的私人播放线索。";
   clearInsightTyping();
   el.innerHTML = `
     <div class="fm-ai-dialog" aria-label="B-SIDE AI 推荐说明">

@@ -236,10 +236,25 @@
       font-weight: 800;
       letter-spacing: .02em;
     }
+    .usage-hint {
+      position: absolute;
+      left: 18px;
+      right: 18px;
+      bottom: 12px;
+      text-align: center;
+      color: rgba(246,239,228,.42);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .03em;
+      text-shadow: 0 2px 12px rgba(0,0,0,.84);
+      pointer-events: none;
+      transition: opacity .36s ease, transform .36s ease;
+    }
     .caption {
       transition: opacity .36s ease, transform .36s ease;
     }
-    body.presenting .caption {
+    body.presenting .caption,
+    body.presenting .usage-hint {
       opacity: 0;
       transform: translateY(18px);
     }
@@ -1077,7 +1092,7 @@
   <canvas id="bgNoise" aria-hidden="true"></canvas>
   <canvas id="scene" aria-label="3D 音乐视频 CD 架"></canvas>
   <canvas id="vinylStage"></canvas>
-  <button id="detailEntryBtn" class="detail-entry-btn" type="button">查看详情 →</button>
+  <button id="detailEntryBtn" class="detail-entry-btn" type="button">播放视频</button>
   <video id="inlineVideo" playsinline webkit-playsinline x5-video-player-type="h5" preload="auto"></video>
   <div id="playIndicator" class="play-indicator"></div>
   <div id="hud">
@@ -1094,6 +1109,7 @@
       <strong id="captionTitle">暖色</strong>
       <span id="captionMeta">3 张 · 色系</span>
     </div>
+    <div class="usage-hint">滑动浏览 CD · 点击进入内容 · 右上角打开 FM</div>
   </div>
   <div id="albumTitleLayer" class="album-title-layer" aria-hidden="true"><strong>暖色</strong></div>
   <section id="photoDrawer" class="photo-drawer" aria-label="内容抽屉">
