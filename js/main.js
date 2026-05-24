@@ -1736,6 +1736,7 @@ function syncDetailEntryButton() {
   var ringTop = vinyl.vinylY - vinyl.ringR + 72;
   var y = Math.max(r.y + r.h + 28, Math.min(ringTop, discTop + 34));
   if (innerWidth > innerHeight) y += 18;
+  else y += 18;
   btn.style.left = (r.x + r.w / 2) + "px";
   btn.style.top = y + "px";
 }
